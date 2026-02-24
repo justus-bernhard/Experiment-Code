@@ -30,6 +30,7 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
     overall: Dict[str, Any] = {}
 
     # TODO 2: Compute grouped stats by background_noise_type.
+    groups = None
     
     # TODO 3: Convert grouped rows into by_noise entries with all required
     # metrics, including focus_fatigue_gap, then sort as specified.
