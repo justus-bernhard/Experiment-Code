@@ -135,7 +135,7 @@ participant_id,age,role,task_type,background_noise_type,noise_volume_level,focus
 134,39,Professional,Writing,Songs with Lyrics,2,112,5,10,8
 135,30,Student,Studying,Traffic Noise,8,30,3,1,2
 136,47,Professional,Reading,Instrumental Music,3,83,1,5,10
-137,47,Student,Coding,Cafe Noise ,4,47,5,6,9
+137,47,Student,Coding,Cafe Noise,4,47,5,6,9
 138,39,Student,Studying,Instrumental Music,7,55,9,7,9
 139,27,Professional,Writing,Traffic Noise,10,13,9,9,8
 140,17,Professional,Studying,Traffic Noise,9,69,4,3,10
@@ -237,7 +237,7 @@ participant_id,age,role,task_type,background_noise_type,noise_volume_level,focus
 236,48,Student,Coding,Traffic Noise,6,73,8,9,9
 237,43,Remote Worker,Coding,Songs with Lyrics,5,14,9,8,10
 238,48,Professional,Studying,Instrumental Music,4,109,7,8,2
-239,20,Professional,Studying,Cafe Noise ,8,79,7,6,4
+239,20,Professional,Studying,Cafe Noise,8,79,7,6,4
 240,34,Professional,Coding,Songs with Lyrics,8,99,1,4,8
 241,19,Student,Writing,Traffic Noise,1,13,4,8,7
 242,32,Student,Studying,Cafe Noise,9,112,2,3,1
@@ -271,7 +271,7 @@ participant_id,age,role,task_type,background_noise_type,noise_volume_level,focus
 270,24,Student,Coding,Silence,4,16,7,8,3
 271,44,Professional,Reading,Songs with Lyrics,2,44,3,4,10
 272,41,Student,Studying,Songs with Lyrics,7,64,4,1,1
-273,40,Professional,Studying,Silence ,6,101,6,1,9
+273,40,Professional,Studying,Silence,6,101,6,1,9
 274,39,Professional,Studying,Silence,3,23,5,4,6
 275,28,Remote Worker,Writing,Cafe Noise,6,19,2,6,9
 276,22,Professional,Coding,Silence,6,89,6,8,7
@@ -305,7 +305,7 @@ participant_id,age,role,task_type,background_noise_type,noise_volume_level,focus
 304,28,Remote Worker,Writing,Songs with Lyrics,6,84,2,8,1
 305,45,Professional,Writing,Silence,1,29,3,1,7
 306,34,Remote Worker,Reading,Silence,4,97,3,1,3
-307,32,Student,Writing,Silence ,1,24,9,2,6
+307,32,Student,Writing,Silence,1,24,9,2,6
 308,34,Student,Coding,Instrumental Music,6,57,7,6,2
 309,43,Professional,Coding,Cafe Noise,4,80,8,9,9
 310,41,Professional,Writing,Instrumental Music,3,30,10,4,1

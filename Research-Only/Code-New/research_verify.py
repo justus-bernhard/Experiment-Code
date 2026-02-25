@@ -16,6 +16,14 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = ROOT / 'Code - New' / 'data' / 'background_noise_focus_dataset.csv'
 REPORT_PATH = ROOT / 'Code - New' / 'outputs' / 'report.json'
+LABEL_MAP = {
+    'silence': 'Silence',
+    'instrumental music': 'Instrumental Music',
+    'songs with lyrics': 'Songs with Lyrics',
+    'cafe noise': 'Cafe Noise',
+    'traffic noise': 'Traffic Noise',
+}
+EXPECTED_LABELS = set(LABEL_MAP.values())
 
 
 def _round3(x: float) -> float:
@@ -29,16 +37,25 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     clean['background_noise_type'] = clean['background_noise_type'].astype(str).str.strip().str.lower()
 
     # Map canonical lowercase labels back to display labels.
-    label_map = {
-        'silence': 'Silence',
-        'instrumental music': 'Instrumental Music',
-        'songs with lyrics': 'Songs with Lyrics',
-        'cafe noise': 'Cafe Noise',
-        'traffic noise': 'Traffic Noise',
-    }
-    clean['background_noise_type'] = clean['background_noise_type'].map(label_map).fillna(clean['background_noise_type'])
+    clean['background_noise_type'] = clean['background_noise_type'].map(LABEL_MAP).fillna(clean['background_noise_type'])
 
     return clean
+
+
+def _assert_cleaning_contract(raw: pd.DataFrame, clean: pd.DataFrame) -> None:
+    """Assert that label cleaning collapses noisy variants to canonical labels."""
+    raw_unique = set(raw['background_noise_type'].astype(str).unique())
+    clean_unique = set(clean['background_noise_type'].astype(str).unique())
+
+    if not len(clean_unique) < len(raw_unique):
+        raise AssertionError(
+            f'Cleaning did not collapse variants: raw={len(raw_unique)} clean={len(clean_unique)}'
+        )
+    if clean_unique != EXPECTED_LABELS:
+        raise AssertionError(
+            'Canonical label set mismatch: '
+            f'expected={sorted(EXPECTED_LABELS)} actual={sorted(clean_unique)}'
+        )
 
 
 def _expected(df: pd.DataFrame) -> Dict[str, Any]:
@@ -100,6 +117,7 @@ def main() -> int:
 
     raw = pd.read_csv(DATA_PATH)
     clean = _clean(raw)
+    _assert_cleaning_contract(raw, clean)
     expected = _expected(clean)
 
     with REPORT_PATH.open('r', encoding='utf-8') as f:
