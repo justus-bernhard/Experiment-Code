@@ -1,0 +1,129 @@
+# Pilot Logging Plan
+
+Date: 2026-04-27
+
+Purpose: Define a functioning pilot logging layer for the collaborative disagreement experiment without creating variables that cannot actually be measured.
+
+## Protocol Review
+
+The experimental protocol requires logging and derived variables for:
+
+- RQ1 collaborative disagreement: whether and when the participant corrects the labeling inconsistency.
+- RQ2 blame/responsibility: post-task Likert items and awareness questions.
+- Performance: time to completion and task success.
+- Verification behavior: dataset inspection, output inspection, test execution, and active review time.
+- Additional logging: prompts and timestamps for prompts, file opens, tests, and submission.
+
+For the pilot, the intervention variable should be operationalized only through `report.json` snapshots. The first snapshot whose `by_noise` labels match the exact expected canonical label set is the first intervention event. Do not infer intervention from prompts, source-code edits, or participant intent.
+
+Expected canonical label set:
+
+```text
+Silence
+Instrumental Music
+Songs with Lyrics
+Cafe Noise
+Traffic Noise
+```
+
+## A) Implemented For Pilot
+
+These items are implemented in the hidden research wrapper:
+
+```powershell
+python Research-Only/run_pilot_session.py --session-id S001 --condition AUT --code-dir "Code - AUT"
+```
+
+Supporting modules:
+
+- `Research-Only/logging/research_logger.py`
+- `Research-Only/logging/report_checks.py`
+- `Research-Only/logging/summarise_session.py`
+- `Research-Only/Code-New/research_verify.py`
+
+- `session_start`: recorded when the researcher starts the observer script.
+- `session_end`: recorded after post-submission checks and summary generation.
+- `submission_done`: recorded when the researcher marks the first participant "done" signal.
+- `time_to_completion_sec`: computed as `submission_done - session_start`.
+- `report_snapshot`: recorded whenever `outputs/report.json` appears or changes.
+- `report_snapshot_count`: count of observed report versions.
+- `first_report_sec`: timestamp of the first observed report snapshot relative to session start.
+- `final_report_hash`: SHA-256 hash of the last report before submission.
+- `final_report_canonical`: whether the final report before submission has the exact canonical label set.
+- `intervention_binary`: whether any report snapshot before or at submission has the exact canonical label set.
+- `time_to_intervention_sec`: timestamp of first canonical report snapshot minus session start.
+- `intervention_source`: fixed value `first_canonical_report_snapshot`.
+- `dataset_hash`: SHA-256 hash of the dataset at session start.
+- `public_tests_passed` and `public_tests_total`: measured by post-submission public test execution.
+- `hidden_tests_passed` and `hidden_tests_total`: measured by post-submission hidden verifier.
+- `task_success_pct`: computed from public and hidden checks.
+- `events.jsonl`: append-only event stream.
+- `session_summary.json`: one flat analysis-ready record per participant.
+
+The participant-facing workflow should remain unchanged. The wrapper should not print correctness details, hidden-check results, or label warnings during the task.
+
+## B) To Be Implemented Next
+
+These items are feasible but should follow after the core wrapper works.
+
+- Questionnaire event import or entry for pre-reveal awareness:
+  - `pre_reveal_awareness`
+  - `pre_reveal_awareness_text`
+- Questionnaire event import or entry for post-reveal awareness:
+  - `post_reveal_awareness`
+- Questionnaire event import or entry for blame/responsibility Likert items:
+  - `blame_ai_responsible`
+  - `blame_self_responsible`
+  - `blame_shared`
+  - `blame_overrelied_ai`
+  - `blame_ai_misleading`
+- Optional prompt-log import if a reliable source becomes available.
+- Optional command/test-run instrumentation if participants are required to run commands through a wrapper.
+- Export helper that combines all `session_summary.json` files into one CSV for analysis.
+- Validation script that flags missing fields, unavailable fields, malformed timestamps, or impossible timings.
+
+## C) Blockers And Difficult Items
+
+These should not be treated as available pilot variables unless extra instrumentation is added.
+
+- Prompt logging in native GitHub Copilot Chat is not reliably available through an official per-session transcript API.
+- GitHub Copilot usage metrics are aggregated/delayed telemetry and do not provide full prompt text for qualitative analysis.
+- VS Code Chat APIs can access prompts only for a custom chat participant contributed by our own extension, not for all native Copilot Chat prompts.
+- Dataset file-open logging is not reliable from a Python wrapper alone. It requires editor extension instrumentation, OS-level monitoring, or a controlled experiment UI.
+- Output file-open logging has the same limitation as dataset file-open logging.
+- During-task test execution timing is only reliable if commands are run through an instrumented shell/wrapper or captured by an IDE extension.
+- Active review time and review-stage intervention classification are deferred. They require explicit review-window boundaries and interaction logging.
+- Running the observer from another machine is only reliable if it has real-time access to the participant filesystem. OneDrive or network-sync timestamps may distort timing.
+
+Unavailable pilot fields should be represented explicitly as unavailable, not as zero.
+
+Example:
+
+```json
+{
+  "prompt_log_available": false,
+  "prompt_count": null,
+  "dataset_open_logging_available": false,
+  "dataset_opened": null,
+  "test_run_process_logging_available": false,
+  "test_run_count": null
+}
+```
+
+## D) New Logging Options And Ideas
+
+These were added during planning and are not core protocol items yet.
+
+- Store every changed `report.json` as a copied snapshot under `Research-Only/logs/<session_id>/report_snapshots/`.
+- Compute strict canonical-label correctness for each report snapshot immediately.
+- Store `valid_json`, `by_noise_labels`, `by_noise_count`, `canonical_labels_correct`, and report hash for every snapshot.
+- Include `intervention_source` to make the operational definition explicit in the summary.
+- Add `final_report_hash` for reproducibility.
+- Add `dataset_hash` for provenance.
+- Add a hidden post-submission evaluator that runs public tests and hidden verifier after the participant is done.
+- Add a summary-to-CSV export script for easy analysis across participants.
+- Add an optional custom VS Code chat participant, such as `@study`, only if prompt logging becomes essential. This would log prompts reliably but would change the participant workflow.
+
+## Short Summary
+
+The current logging environment runs as a hidden researcher observer script on the participant machine before the task starts. It records session start, watches `outputs/report.json`, snapshots every changed report, computes canonical-label correctness, and waits for the researcher to mark completion. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from `session_summary.json`, or from a later combined CSV export across sessions.

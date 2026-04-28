@@ -1,11 +1,14 @@
-﻿"""Research-only verifier for Code - New.
+"""Research-only verifier for participant code directories.
 
 Run from repository root after participant submits:
-  python Research-Only/Code-New/research_verify.py
+  python Research-Only/Code-New/research_verify.py --code-dir "Code - AUT"
+  python Research-Only/Code-New/research_verify.py --code-dir "Code - AUG"
+  python Research-Only/Code-New/research_verify.py --code-dir "Code - Solution"
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict
@@ -14,8 +17,9 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA_PATH = ROOT / 'Code - New' / 'data' / 'background_noise_focus_dataset.csv'
-REPORT_PATH = ROOT / 'Code - New' / 'outputs' / 'report.json'
+DATA_RELATIVE_PATH = Path('data') / 'background_noise_focus_dataset.csv'
+REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
+KNOWN_CODE_DIRS = ('Code - AUT', 'Code - AUG', 'Code - Solution')
 LABEL_MAP = {
     'silence': 'Silence',
     'instrumental music': 'Instrumental Music',
@@ -24,6 +28,53 @@ LABEL_MAP = {
     'traffic noise': 'Traffic Noise',
 }
 EXPECTED_LABELS = set(LABEL_MAP.values())
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description='Verify a participant report against the research-only hidden baseline.'
+    )
+    parser.add_argument(
+        '--code-dir',
+        help=(
+            'Participant code directory to verify, for example "Code - AUT". '
+            'Relative paths are resolved from the repository root.'
+        ),
+    )
+    return parser
+
+
+def _available_code_dirs() -> list[Path]:
+    return [
+        ROOT / name
+        for name in KNOWN_CODE_DIRS
+        if (ROOT / name).is_dir()
+    ]
+
+
+def _resolve_code_dir(value: str | None) -> Path:
+    if value:
+        raw = Path(value)
+        code_dir = raw if raw.is_absolute() else ROOT / raw
+        code_dir = code_dir.resolve()
+        if not code_dir.is_dir():
+            raise FileNotFoundError(f'Code directory not found: {code_dir}')
+        return code_dir
+
+    cwd = Path.cwd().resolve()
+    if (cwd / DATA_RELATIVE_PATH).exists():
+        return cwd
+
+    candidates = _available_code_dirs()
+    if len(candidates) == 1:
+        return candidates[0].resolve()
+
+    available = ', '.join(path.name for path in candidates) or 'none'
+    raise ValueError(
+        'Could not infer which participant directory to verify. '
+        'Pass --code-dir explicitly. '
+        f'Available known directories: {available}'
+    )
 
 
 def _round3(x: float) -> float:
@@ -112,21 +163,33 @@ def _expected(df: pd.DataFrame) -> Dict[str, Any]:
 
 
 def main() -> int:
-    if not REPORT_PATH.exists():
-        raise FileNotFoundError(f'Missing report: {REPORT_PATH}')
+    parser = _build_parser()
+    args = parser.parse_args()
+    try:
+        code_dir = _resolve_code_dir(args.code_dir)
+    except (FileNotFoundError, ValueError) as exc:
+        parser.error(str(exc))
 
-    raw = pd.read_csv(DATA_PATH)
+    data_path = code_dir / DATA_RELATIVE_PATH
+    report_path = code_dir / REPORT_RELATIVE_PATH
+
+    if not data_path.exists():
+        parser.error(f'Missing dataset: {data_path}')
+    if not report_path.exists():
+        parser.error(f'Missing report: {report_path}')
+
+    raw = pd.read_csv(data_path)
     clean = _clean(raw)
     _assert_cleaning_contract(raw, clean)
     expected = _expected(clean)
 
-    with REPORT_PATH.open('r', encoding='utf-8') as f:
+    with report_path.open('r', encoding='utf-8') as f:
         actual = json.load(f)
 
     if actual != expected:
-        raise AssertionError('Report mismatch against research verifier baseline')
+        raise AssertionError(f'Report mismatch against research verifier baseline: {report_path}')
 
-    print('OK: report matches research verifier baseline')
+    print(f'OK: report matches research verifier baseline for {code_dir.name}')
     return 0
 
 
