@@ -14,17 +14,19 @@ The experimental protocol requires logging and derived variables for:
 - Verification behavior: dataset inspection, output inspection, test execution, and active review time.
 - Additional logging: prompts and timestamps for prompts, file opens, tests, and submission.
 
-For the pilot, the intervention variable should be operationalized only through `report.json` snapshots. The first snapshot whose `by_noise` labels match the exact expected canonical label set is the first intervention event. Do not infer intervention from prompts, source-code edits, or participant intent.
+For the pilot, the intervention variable should be operationalized only through `report.json` snapshots. The first snapshot whose `by_noise` labels semantically normalize to the five expected noise groups is the first intervention event. Do not infer intervention from prompts, source-code edits, or participant intent.
 
-Expected canonical label set:
+Expected semantic noise groups:
 
 ```text
-Silence
-Instrumental Music
-Songs with Lyrics
-Cafe Noise
-Traffic Noise
+silence
+instrumental music
+songs with lyrics
+cafe noise
+traffic noise
 ```
+
+Display casing is not part of the main intervention DV. For example, `Songs with Lyrics`, `Songs With Lyrics`, and `songs with lyrics` all count as the same semantic group. Exact canonical display labels are retained as a secondary diagnostic only.
 
 ## A) Implemented For Pilot
 
@@ -39,8 +41,9 @@ Supporting modules:
 - `Research-Only/logging/research_logger.py`
 - `Research-Only/logging/report_checks.py`
 - `Research-Only/logging/summarise_session.py`
-- `Research-Only/Code-New/research_verify.py`
+- `Research-Only/research_verify.py`
 
+- `outputs_cleared`: recorded immediately before `session_start` after the active condition's `outputs/` folder is emptied.
 - `session_start`: recorded when the researcher starts the observer script.
 - `session_end`: recorded after post-submission checks and summary generation.
 - `submission_done`: recorded when the researcher marks the first participant "done" signal.
@@ -48,17 +51,18 @@ Supporting modules:
 - `report_snapshot`: recorded whenever `outputs/report.json` appears or changes.
 - `report_snapshot_count`: count of observed report versions.
 - `first_report_sec`: timestamp of the first observed report snapshot relative to session start.
-- `final_report_hash`: SHA-256 hash of the last report before submission.
-- `final_report_canonical`: whether the final report before submission has the exact canonical label set.
-- `intervention_binary`: whether any report snapshot before or at submission has the exact canonical label set.
-- `time_to_intervention_sec`: timestamp of first canonical report snapshot minus session start.
-- `intervention_source`: fixed value `first_canonical_report_snapshot`.
-- `dataset_hash`: SHA-256 hash of the dataset at session start.
+- `diagnostics.artifacts.final_report_sha256`: SHA-256 hash of the last report before submission.
+- `report_outcome.semantic_pass`: whether the final report before submission has the five expected semantic noise groups.
+- `primary_outcome.intervention_binary`: whether any report snapshot before or at submission normalizes to the five expected semantic noise groups.
+- `time_to_intervention_sec`: timestamp of first semantically normalized report snapshot minus session start.
+- `primary_outcome.intervention_source`: fixed value `first_semantic_pass_report_snapshot`.
+- `report_outcome.canonical_pass`: secondary diagnostic for exact canonical display labels.
+- `diagnostics.artifacts.dataset_sha256`: SHA-256 hash of the dataset at session start.
 - `public_tests_passed` and `public_tests_total`: measured by post-submission public test execution.
 - `hidden_tests_passed` and `hidden_tests_total`: measured by post-submission hidden verifier.
 - `task_success_pct`: computed from public and hidden checks.
-- `events.jsonl`: append-only event stream.
-- `session_summary.json`: one flat analysis-ready record per participant.
+- `events.jsonl`: append-only event stream using the `event.v2` envelope with event-specific data under `data`.
+- `session_summary.json`: one nested, researcher-readable `session_summary.v2` record per participant.
 
 The participant-facing workflow should remain unchanged. The wrapper should not print correctness details, hidden-check results, or label warnings during the task.
 
@@ -115,15 +119,15 @@ Example:
 These were added during planning and are not core protocol items yet.
 
 - Store every changed `report.json` as a copied snapshot under `Research-Only/logs/<session_id>/report_snapshots/`.
-- Compute strict canonical-label correctness for each report snapshot immediately.
-- Store `valid_json`, `by_noise_labels`, `by_noise_count`, `canonical_labels_correct`, and report hash for every snapshot.
+- Compute semantic normalization correctness and strict canonical-display correctness for each report snapshot immediately.
+- Store `valid_json`, `by_noise_labels`, `by_noise_count`, `semantic_normalization_pass`, `semantic_noise_type_count`, `normalization_status`, `display_labels_canonical`, and report hash for every snapshot. In `session_summary.json`, these are summarized as `semantic_pass`, `canonical_pass`, `normalization_status`, and `noise_type_count`. `noise_type_count` is the number of reported `by_noise` groups after participant processing; uncorrected label splits should therefore appear as counts above 5.
 - Include `intervention_source` to make the operational definition explicit in the summary.
-- Add `final_report_hash` for reproducibility.
-- Add `dataset_hash` for provenance.
+- Add `final_report_sha256` for reproducibility.
+- Add `dataset_sha256` for provenance.
 - Add a hidden post-submission evaluator that runs public tests and hidden verifier after the participant is done.
 - Add a summary-to-CSV export script for easy analysis across participants.
 - Add an optional custom VS Code chat participant, such as `@study`, only if prompt logging becomes essential. This would log prompts reliably but would change the participant workflow.
 
 ## Short Summary
 
-The current logging environment runs as a hidden researcher observer script on the participant machine before the task starts. It records session start, watches `outputs/report.json`, snapshots every changed report, computes canonical-label correctness, and waits for the researcher to mark completion. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from `session_summary.json`, or from a later combined CSV export across sessions.
+The current logging environment runs as a hidden researcher observer script on the participant machine before the task starts. It clears the active condition's `outputs/` folder, records session start, watches `outputs/report.json`, snapshots every changed report, computes semantic normalization correctness plus strict display-label diagnostics, and waits for the researcher to mark completion. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from the nested `session_summary.json`, or from a later combined CSV export across sessions.

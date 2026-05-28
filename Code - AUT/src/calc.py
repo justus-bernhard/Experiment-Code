@@ -1,4 +1,4 @@
-﻿"""Stable calculation utilities used by the report feature."""
+"""Stable calculation utilities used by the report feature."""
 from __future__ import annotations
 
 from typing import Dict

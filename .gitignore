@@ -1,0 +1,8 @@
+# Python/cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Research runtime artifacts
+Research-Only/logs/
+Research-Only/**/__pycache__/

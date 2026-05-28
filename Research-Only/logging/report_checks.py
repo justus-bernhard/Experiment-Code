@@ -15,6 +15,13 @@ EXPECTED_LABELS = {
     'Cafe Noise',
     'Traffic Noise',
 }
+EXPECTED_SEMANTIC_LABELS = {
+    'silence',
+    'instrumental music',
+    'songs with lyrics',
+    'cafe noise',
+    'traffic noise',
+}
 
 REQUIRED_TOP_KEYS = {'total_participants', 'overall', 'by_noise', 'meta'}
 REQUIRED_OVERALL_KEYS = {
@@ -55,6 +62,32 @@ def _labels_from_report(report: Dict[str, Any]) -> List[str]:
     return labels
 
 
+def _semantic_label(label: str) -> str:
+    return ' '.join(label.strip().lower().split())
+
+
+def _semantic_labels(labels: List[str]) -> List[str]:
+    return [_semantic_label(label) for label in labels]
+
+
+def _normalization_status(
+    labels: List[str],
+    semantic_normalization_pass: bool,
+    public_schema_valid: bool,
+) -> str:
+    if not public_schema_valid:
+        return 'invalid_report'
+    if not labels:
+        return 'semantic_fail'
+    if semantic_normalization_pass:
+        return 'semantic_pass'
+    if len(labels) > len(EXPECTED_SEMANTIC_LABELS):
+        return 'semantic_fail_extra_groups'
+    if len(labels) < len(EXPECTED_SEMANTIC_LABELS):
+        return 'semantic_fail_missing_groups'
+    return 'semantic_fail'
+
+
 def _public_schema_valid(report: Dict[str, Any]) -> bool:
     if not REQUIRED_TOP_KEYS.issubset(report.keys()):
         return False
@@ -84,6 +117,10 @@ def analyze_report(path: Path) -> Dict[str, Any]:
         'json_error': None,
         'by_noise_labels': [],
         'by_noise_count': 0,
+        'semantic_normalization_pass': False,
+        'semantic_noise_type_count': 0,
+        'normalization_status': 'invalid_report',
+        'display_labels_canonical': False,
         'canonical_labels_correct': False,
         'public_schema_valid': False,
     }
@@ -105,9 +142,22 @@ def analyze_report(path: Path) -> Dict[str, Any]:
         return result
 
     labels = _labels_from_report(report)
+    semantic_label_set = set(_semantic_labels(labels))
+    public_schema_valid = _public_schema_valid(report)
+    semantic_normalization_pass = semantic_label_set == EXPECTED_SEMANTIC_LABELS and len(labels) == 5
+    display_labels_canonical = set(labels) == EXPECTED_LABELS and len(labels) == 5
+
     result['valid_json'] = True
     result['by_noise_labels'] = labels
     result['by_noise_count'] = len(labels)
-    result['canonical_labels_correct'] = set(labels) == EXPECTED_LABELS and len(labels) == 5
-    result['public_schema_valid'] = _public_schema_valid(report)
+    result['semantic_normalization_pass'] = semantic_normalization_pass
+    result['semantic_noise_type_count'] = len(labels)
+    result['normalization_status'] = _normalization_status(
+        labels,
+        semantic_normalization_pass,
+        public_schema_valid,
+    )
+    result['display_labels_canonical'] = display_labels_canonical
+    result['canonical_labels_correct'] = display_labels_canonical
+    result['public_schema_valid'] = public_schema_valid
     return result

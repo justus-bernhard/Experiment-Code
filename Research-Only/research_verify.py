@@ -1,14 +1,15 @@
 """Research-only verifier for participant code directories.
 
 Run from repository root after participant submits:
-  python Research-Only/Code-New/research_verify.py --code-dir "Code - AUT"
-  python Research-Only/Code-New/research_verify.py --code-dir "Code - AUG"
-  python Research-Only/Code-New/research_verify.py --code-dir "Code - Solution"
+  python Research-Only/research_verify.py --code-dir "Code - AUT"
+  python Research-Only/research_verify.py --code-dir "Code - AUG"
+  python Research-Only/research_verify.py --code-dir "Code - Solution"
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from pathlib import Path
 from typing import Any, Dict
@@ -16,7 +17,7 @@ from typing import Any, Dict
 import pandas as pd
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 DATA_RELATIVE_PATH = Path('data') / 'background_noise_focus_dataset.csv'
 REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
 KNOWN_CODE_DIRS = ('Code - AUT', 'Code - AUG', 'Code - Solution')
@@ -81,6 +82,10 @@ def _round3(x: float) -> float:
     return round(float(x), 3)
 
 
+def _semantic_label(label: str) -> str:
+    return ' '.join(label.strip().lower().split())
+
+
 def _clean(df: pd.DataFrame) -> pd.DataFrame:
     clean = df.copy()
 
@@ -91,6 +96,25 @@ def _clean(df: pd.DataFrame) -> pd.DataFrame:
     clean['background_noise_type'] = clean['background_noise_type'].map(LABEL_MAP).fillna(clean['background_noise_type'])
 
     return clean
+
+
+def _normalize_actual_report_labels(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize display-label variants before comparing report semantics."""
+    normalized = copy.deepcopy(report)
+    by_noise = normalized.get('by_noise')
+    if not isinstance(by_noise, list):
+        return normalized
+
+    for row in by_noise:
+        if not isinstance(row, dict):
+            continue
+        label = row.get('background_noise_type')
+        if not isinstance(label, str):
+            continue
+        semantic_label = _semantic_label(label)
+        row['background_noise_type'] = LABEL_MAP.get(semantic_label, label.strip())
+
+    return normalized
 
 
 def _assert_cleaning_contract(raw: pd.DataFrame, clean: pd.DataFrame) -> None:
@@ -185,6 +209,7 @@ def main() -> int:
 
     with report_path.open('r', encoding='utf-8') as f:
         actual = json.load(f)
+    actual = _normalize_actual_report_labels(actual)
 
     if actual != expected:
         raise AssertionError(f'Report mismatch against research verifier baseline: {report_path}')

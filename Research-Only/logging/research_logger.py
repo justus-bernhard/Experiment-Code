@@ -32,14 +32,15 @@ class ResearchLogger:
     def elapsed_ms(self) -> int:
         return int(round((time.monotonic() - self._start_monotonic) * 1000))
 
-    def event(self, event_type: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def event(self, event_type: str, data: Dict[str, Any] | None = None) -> Dict[str, Any]:
         record = {
+            'schema_version': 'event.v2',
             'session_id': self.session_id,
             'condition': self.condition,
             'event_type': event_type,
             'timestamp_utc': utc_now_iso(),
             'elapsed_ms': self.elapsed_ms(),
-            'payload': payload or {},
+            'data': data or {},
         }
         with self.events_path.open('a', encoding='utf-8') as handle:
             handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + '\n')
@@ -66,7 +67,7 @@ def read_events(events_path: Path) -> List[Dict[str, Any]]:
 def write_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w', encoding='utf-8') as handle:
-        json.dump(data, handle, indent=2, sort_keys=True, ensure_ascii=False)
+        json.dump(data, handle, indent=2, sort_keys=False, ensure_ascii=False)
         handle.write('\n')
 
 
@@ -76,9 +77,24 @@ def tail_text(text: str, limit: int = 4000) -> str:
     return text[-limit:]
 
 
+def event_data(event: Dict[str, Any] | None) -> Dict[str, Any]:
+    if event is None:
+        return {}
+
+    data = event.get('data')
+    if isinstance(data, dict):
+        return data
+
+    payload = event.get('payload')
+    if isinstance(payload, dict):
+        return payload
+
+    return {}
+
+
 def event_payloads(events: Iterable[Dict[str, Any]], event_type: str) -> List[Dict[str, Any]]:
     return [
-        event.get('payload', {})
+        event_data(event)
         for event in events
         if event.get('event_type') == event_type
     ]

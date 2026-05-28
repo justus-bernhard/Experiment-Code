@@ -1,4 +1,4 @@
-﻿"""
+"""
 Report generation module.
 
 Implement `generate_report(df)` so that it returns a JSON-serializable

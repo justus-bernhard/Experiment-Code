@@ -1,3 +1,21 @@
-outputs/
+# Python/cache
 __pycache__/
 .pytest_cache/
+*.pyc
+
+# Local environment/editor
+.venv/
+venv/
+.vscode/
+
+# Experiment runtime artifacts
+logs/
+sessions/
+events.jsonl
+session_summary.json
+chat_*.md
+report_*.json
+
+# Keep outputs folder but ignore generated reports
+outputs/*
+!outputs/.gitkeep

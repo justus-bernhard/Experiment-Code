@@ -35,7 +35,7 @@ from summarise_session import summarize_log_dir  # noqa: E402
 
 DATA_RELATIVE_PATH = Path('data') / 'background_noise_focus_dataset.csv'
 REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
-HIDDEN_VERIFIER_PATH = RESEARCH_DIR / 'Code-New' / 'research_verify.py'
+HIDDEN_VERIFIER_PATH = RESEARCH_DIR / 'research_verify.py'
 
 
 def _relative(path: Path) -> str:
@@ -81,6 +81,32 @@ def _resolve_code_dir(value: str) -> Path:
     if not code_dir.is_dir():
         raise FileNotFoundError(f'Code directory not found: {code_dir}')
     return code_dir
+
+
+def _clear_outputs_dir(code_dir: Path) -> Dict[str, Any]:
+    outputs_dir = (code_dir / 'outputs').resolve()
+    expected_parent = code_dir.resolve()
+    if outputs_dir.parent != expected_parent:
+        raise ValueError(f'Unexpected outputs directory location: {outputs_dir}')
+
+    outputs_dir.mkdir(exist_ok=True)
+    deleted_files: List[str] = []
+
+    for item in outputs_dir.iterdir():
+        if item.name == '.gitkeep':
+            continue
+
+        deleted_files.append(_relative(item))
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+
+    return {
+        'outputs_dir': _relative(outputs_dir),
+        'deleted_count': len(deleted_files),
+        'deleted_files': deleted_files,
+    }
 
 
 class ReportWatcher:
@@ -200,8 +226,10 @@ def _run_command(
             'duration_ms': duration_ms,
             'exit_code': result.returncode,
             'timed_out': timed_out,
-            'stdout_tail': tail_text(result.stdout or ''),
-            'stderr_tail': tail_text(result.stderr or ''),
+            'diagnostics': {
+                'stdout_tail': tail_text(result.stdout or ''),
+                'stderr_tail': tail_text(result.stderr or ''),
+            },
         },
     )
     return result
@@ -301,6 +329,7 @@ def main() -> int:
             parser.error(f'Session already has an events file: {events_path}')
 
         logger = ResearchLogger(session_log_dir, args.session_id, args.condition)
+        logger.event('outputs_cleared', _clear_outputs_dir(code_dir))
         logger.event('session_start', _session_start_payload(args.session_id, args.condition, code_dir))
 
         watcher = ReportWatcher(code_dir, session_log_dir, logger, args.poll_interval_sec)
