@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
@@ -65,8 +66,8 @@ class PilotUI:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title('Focus Session')
-        self.root.geometry('380x460')
-        self.root.minsize(340, 420)
+        self.root.geometry('300x360')
+        self.root.minsize(280, 330)
         self.root.configure(bg=BG)
         self.root.attributes('-topmost', True)
         self.root.protocol('WM_DELETE_WINDOW', self._on_close)
@@ -87,6 +88,7 @@ class PilotUI:
         self.timer_after_id: str | None = None
         self.remaining_seconds = 0
         self.total_phase_seconds = 0
+        self.phase_deadline: float | None = None
 
         self.container = tk.Frame(self.root, bg=BG)
         self.container.pack(fill='both', expand=True)
@@ -113,9 +115,9 @@ class PilotUI:
         self.root.title('Research Setup')
 
         panel = self._panel()
-        self._label(panel, 'Research setup', 18, TEXT).pack(pady=(20, 10))
+        self._label(panel, 'Research setup', 15, TEXT).pack(pady=(14, 8))
 
-        self._label(panel, 'Session ID', 10, MUTED, anchor='w').pack(fill='x', padx=28, pady=(10, 4))
+        self._label(panel, 'Session ID', 9, MUTED, anchor='w').pack(fill='x', padx=20, pady=(8, 3))
         entry = tk.Entry(
             panel,
             textvariable=self.session_id_var,
@@ -123,12 +125,12 @@ class PilotUI:
             fg=TEXT,
             insertbackground=TEXT,
             relief='flat',
-            font=('Segoe UI', 12),
+            font=('Segoe UI', 10),
         )
-        entry.pack(fill='x', padx=28, ipady=7)
+        entry.pack(fill='x', padx=20, ipady=5)
         entry.focus_set()
 
-        self._label(panel, 'Condition', 10, MUTED, anchor='w').pack(fill='x', padx=28, pady=(18, 4))
+        self._label(panel, 'Condition', 9, MUTED, anchor='w').pack(fill='x', padx=20, pady=(14, 3))
         option = tk.OptionMenu(panel, self.condition_var, *KNOWN_CONDITIONS.keys())
         option.configure(
             bg='#1b1c1e',
@@ -137,13 +139,13 @@ class PilotUI:
             activeforeground=TEXT,
             relief='flat',
             highlightthickness=0,
-            font=('Segoe UI', 11),
+            font=('Segoe UI', 10),
         )
         option['menu'].configure(bg='#1b1c1e', fg=TEXT, activebackground=PANEL, activeforeground=TEXT)
-        option.pack(fill='x', padx=28, ipady=3)
+        option.pack(fill='x', padx=20, ipady=2)
 
-        self._label(panel, textvariable=self.error_var, size=9, color=ERROR).pack(pady=(14, 0))
-        self._button(panel, 'Continue', self._prepare_ready).pack(pady=(18, 24), ipadx=20, ipady=8)
+        self._label(panel, textvariable=self.error_var, size=8, color=ERROR).pack(pady=(10, 0))
+        self._button(panel, 'Continue', self._prepare_ready).pack(pady=(14, 16), ipadx=16, ipady=6)
 
     def _prepare_ready(self) -> None:
         session_id = self.session_id_var.get().strip()
@@ -173,9 +175,9 @@ class PilotUI:
         self._clear()
         self.root.title('Focus Session')
         panel = self._panel()
-        self._label(panel, 'Ready to begin', 20, TEXT).pack(pady=(58, 12))
-        self._label(panel, 'Press Start when you are ready.', 11, MUTED).pack(pady=(0, 42))
-        self._button(panel, 'Start', self._start_session).pack(ipadx=28, ipady=10)
+        self._label(panel, 'Ready to begin', 17, TEXT).pack(pady=(44, 10))
+        self._label(panel, 'Press Start when you are ready.', 10, MUTED).pack(pady=(0, 30))
+        self._button(panel, 'Start', self._start_session).pack(ipadx=24, ipady=8)
 
     def _start_session(self) -> None:
         if self.session_log_dir is None or self.code_dir is None:
@@ -245,57 +247,64 @@ class PilotUI:
         self.current_phase = phase
         self.remaining_seconds = duration_sec
         self.total_phase_seconds = duration_sec
+        self.phase_deadline = time.monotonic() + duration_sec
 
         panel = self._panel()
-        self._label(panel, title, 18, TEXT).pack(pady=(18, 4))
-        self._label(panel, helper, 10, MUTED).pack(pady=(0, 14))
+        self._label(panel, title, 15, TEXT).pack(pady=(12, 3))
+        self._label(panel, helper, 9, MUTED).pack(pady=(0, 10))
 
-        canvas = tk.Canvas(panel, width=230, height=230, bg=PANEL, highlightthickness=0)
-        canvas.pack(pady=(0, 12))
-        canvas.create_oval(20, 20, 210, 210, outline=RING_BG, width=12, tags='ring_bg')
+        canvas = tk.Canvas(panel, width=170, height=170, bg=PANEL, highlightthickness=0)
+        canvas.pack(pady=(0, 8))
+        canvas.create_oval(15, 15, 155, 155, outline=RING_BG, width=8, tags='ring_bg')
         canvas.create_arc(
-            20,
-            20,
-            210,
-            210,
+            15,
+            15,
+            155,
+            155,
             start=90,
             extent=359.9,
             style='arc',
             outline=ACCENT,
-            width=12,
+            width=8,
             tags='ring',
         )
-        canvas.create_text(115, 108, text='', fill=TEXT, font=('Segoe UI', 34, 'bold'), tags='time')
-        canvas.create_text(115, 145, text='remaining', fill=MUTED, font=('Segoe UI', 10), tags='caption')
+        canvas.create_text(85, 80, text='', fill=TEXT, font=('Segoe UI', 24, 'bold'), tags='time')
+        canvas.create_text(85, 111, text='remaining', fill=MUTED, font=('Segoe UI', 8), tags='caption')
 
         if button_text and button_command:
-            self._button(panel, button_text, button_command).pack(pady=(4, 8), ipadx=12, ipady=8)
+            self._button(panel, button_text, button_command).pack(pady=(2, 6), ipadx=8, ipady=6)
         if footer:
-            self._label(panel, footer, 10, MUTED).pack(pady=(8, 0))
+            self._label(panel, footer, 9, MUTED).pack(pady=(6, 0))
 
         self._tick_timer(canvas)
 
     def _tick_timer(self, canvas: tk.Canvas) -> None:
+        if self.phase_deadline is None:
+            return
+
+        remaining_float = max(0.0, self.phase_deadline - time.monotonic())
+        self.remaining_seconds = int(remaining_float + 0.999)
         minutes, seconds = divmod(max(self.remaining_seconds, 0), 60)
         canvas.itemconfigure('time', text=f'{minutes:02d}:{seconds:02d}')
 
-        progress = 0 if self.total_phase_seconds == 0 else self.remaining_seconds / self.total_phase_seconds
+        progress = 0 if self.total_phase_seconds == 0 else remaining_float / self.total_phase_seconds
         canvas.itemconfigure('ring', extent=max(progress * 359.9, 0.1))
 
-        if self.remaining_seconds <= 0:
+        if remaining_float <= 0:
             if self.current_phase == 'task_phase':
                 self._end_task_phase('timer_elapsed', clicked=False)
             elif self.current_phase == 'review_phase':
                 self._end_review_phase()
             return
 
-        self.remaining_seconds -= 1
-        self.timer_after_id = self.root.after(1000, lambda: self._tick_timer(canvas))
+        next_delay_ms = min(250, max(25, int(remaining_float * 1000)))
+        self.timer_after_id = self.root.after(next_delay_ms, lambda: self._tick_timer(canvas))
 
     def _end_task_phase(self, reason: str, clicked: bool) -> None:
         if self.timer_after_id is not None:
             self.root.after_cancel(self.timer_after_id)
             self.timer_after_id = None
+        self.phase_deadline = None
         if self.current_phase != 'task_phase':
             return
 
@@ -313,6 +322,7 @@ class PilotUI:
         if self.timer_after_id is not None:
             self.root.after_cancel(self.timer_after_id)
             self.timer_after_id = None
+        self.phase_deadline = None
         if self.current_phase != 'review_phase':
             return
 
@@ -352,13 +362,13 @@ class PilotUI:
     def _show_complete(self) -> None:
         self._clear()
         panel = self._panel()
-        self._label(panel, 'Session complete', 20, TEXT).pack(pady=(72, 14))
+        self._label(panel, 'Session complete', 17, TEXT).pack(pady=(54, 12))
         self._label(
             panel,
             'Your work has been handed in.\nPlease wait for the researcher.',
-            12,
+            10,
             MUTED,
-        ).pack(pady=(0, 24))
+        ).pack(pady=(0, 18))
 
     def _on_close(self) -> None:
         if self.active:
@@ -387,7 +397,7 @@ class PilotUI:
 
     def _panel(self) -> tk.Frame:
         panel = tk.Frame(self.container, bg=PANEL)
-        panel.pack(fill='both', expand=True, padx=16, pady=16)
+        panel.pack(fill='both', expand=True, padx=10, pady=10)
         return panel
 
     def _label(
@@ -408,6 +418,7 @@ class PilotUI:
             font=('Segoe UI', size),
             anchor=anchor,
             justify='center',
+            wraplength=250,
         )
 
     def _button(self, parent: tk.Widget, text: str, command: Any) -> tk.Button:
@@ -421,7 +432,7 @@ class PilotUI:
             activeforeground='#101214',
             relief='flat',
             borderwidth=0,
-            font=('Segoe UI', 11, 'bold'),
+            font=('Segoe UI', 10, 'bold'),
             cursor='hand2',
         )
 

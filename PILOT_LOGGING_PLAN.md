@@ -53,6 +53,7 @@ Supporting modules:
 - `task_phase_start` and `task_phase_end`: recorded around the 30-minute task phase.
 - `task_done_clicked`: recorded if the participant ends the task phase before the timer elapses.
 - `review_phase_start` and `review_phase_end`: recorded around the fixed 10-minute review phase.
+- `ui_close_attempted`: recorded if the participant tries to close the UI during an active task or review phase. The close is blocked.
 - `session_end`: recorded after post-submission checks and summary generation.
 - `submission_done`: recorded automatically when the UI review timer ends, or when the researcher marks the first participant "done" signal in the terminal fallback.
 - `time_to_completion_sec`: computed as `submission_done - session_start`.
@@ -60,6 +61,7 @@ Supporting modules:
 - `report_snapshot.data.phase`: records `task_phase` or `review_phase` for UI sessions.
 - `report_snapshot_count`: count of observed report versions.
 - `task_phase_report_snapshot_count` and `review_phase_report_snapshot_count`: phase-specific snapshot counts for UI sessions.
+- `diagnostics.ui.ui_close_attempted_count`: count of blocked active-session close attempts.
 - `first_report_sec`: timestamp of the first observed report snapshot relative to session start.
 - `first_intervention_sec`: timestamp of the first semantically passing report snapshot relative to session start.
 - `diagnostics.artifacts.final_report_sha256`: SHA-256 hash of the last report before submission.

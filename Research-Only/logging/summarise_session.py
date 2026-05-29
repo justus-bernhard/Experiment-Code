@@ -184,7 +184,11 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     outputs_cleared_data = _event_data(outputs_cleared)
     ui_ready = _last(events, 'ui_ready')
     ui_error = _last(events, 'ui_error')
-    ui_closed_attempted = _last(events, 'ui_close_attempted')
+    ui_close_attempts = [
+        event
+        for event in events
+        if event.get('event_type') == 'ui_close_attempted'
+    ]
 
     totals_available = all(
         value is not None
@@ -252,7 +256,8 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         'diagnostics': {
             'ui': {
                 'always_on_top': _event_data(ui_ready).get('always_on_top'),
-                'closed_early': ui_closed_attempted is not None,
+                'closed_early': bool(ui_close_attempts),
+                'ui_close_attempted_count': len(ui_close_attempts),
                 'error': _event_data(ui_error).get('error') if ui_error else None,
             },
             'artifacts': {
