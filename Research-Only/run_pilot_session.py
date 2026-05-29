@@ -22,6 +22,8 @@ LOGGING_DIR = RESEARCH_DIR / 'logging'
 sys.path.insert(0, str(LOGGING_DIR))
 
 from pilot_observer import (  # noqa: E402
+    REPORT_SOURCE_RELATIVE_PATH,
+    CodeSnapshotter,
     REPORT_RELATIVE_PATH,
     ReportWatcher,
     assert_new_session,
@@ -29,6 +31,7 @@ from pilot_observer import (  # noqa: E402
     relative,
     resolve_code_dir,
     resolve_logs_root,
+    reset_code_dir_to_head,
     run_hidden_verifier,
     run_public_tests,
     session_start_data,
@@ -71,6 +74,7 @@ def main() -> int:
     args = parser.parse_args()
     logger: ResearchLogger | None = None
     watcher: ReportWatcher | None = None
+    code_snapshotter: CodeSnapshotter | None = None
     session_log_dir: Path | None = None
 
     try:
@@ -83,10 +87,19 @@ def main() -> int:
             parser.error(str(exc))
 
         logger = ResearchLogger(session_log_dir, args.session_id, args.condition)
+        logger.event('code_dir_reset', reset_code_dir_to_head(code_dir))
         logger.event('outputs_cleared', clear_outputs_dir(code_dir))
         logger.event('session_start', session_start_data(args.session_id, args.condition, code_dir))
+        code_snapshotter = CodeSnapshotter(code_dir, session_log_dir, logger)
+        code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_baseline')
 
-        watcher = ReportWatcher(code_dir, session_log_dir, logger, args.poll_interval_sec)
+        watcher = ReportWatcher(
+            code_dir,
+            session_log_dir,
+            logger,
+            args.poll_interval_sec,
+            code_snapshotter=code_snapshotter,
+        )
         watcher.start()
 
         print(f'Session {args.session_id} started.')
@@ -95,8 +108,10 @@ def main() -> int:
         print('Press ENTER when participant declares done.')
         input()
 
+        code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_task_done')
         watcher.stop()
         watcher.check_once()
+        code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_review_end')
         logger.event('submission_done', {'source': 'researcher_marked'})
 
         # Hidden verifier must run before public tests, because public tests may

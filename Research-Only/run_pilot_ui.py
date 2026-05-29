@@ -32,12 +32,15 @@ if str(LOGGING_DIR) not in sys.path:
     sys.path.insert(0, str(LOGGING_DIR))
 
 from pilot_observer import (  # noqa: E402
+    REPORT_SOURCE_RELATIVE_PATH,
+    CodeSnapshotter,
     KNOWN_CONDITIONS,
     ReportWatcher,
     assert_new_session,
     clear_outputs_dir,
     code_dir_for_condition,
     resolve_logs_root,
+    reset_code_dir_to_head,
     run_hidden_verifier,
     run_public_tests,
     session_log_dir,
@@ -80,6 +83,7 @@ class PilotUI:
 
         self.logger: ResearchLogger | None = None
         self.watcher: ReportWatcher | None = None
+        self.code_snapshotter: CodeSnapshotter | None = None
         self.session_log_dir: Path | None = None
         self.code_dir: Path | None = None
         self.current_phase: str | None = None
@@ -189,11 +193,19 @@ class PilotUI:
         try:
             assert_new_session(self.session_log_dir)
             self.logger = ResearchLogger(self.session_log_dir, session_id, condition)
+            self.logger.event('code_dir_reset', reset_code_dir_to_head(self.code_dir))
             self.logger.event('outputs_cleared', clear_outputs_dir(self.code_dir))
             self.logger.event('session_start', session_start_data(session_id, condition, self.code_dir))
             self.logger.event('participant_start_clicked', {})
             self.current_phase = 'task_phase'
             self.logger.event('task_phase_start', {'duration_sec': TASK_PHASE_SECONDS})
+            self.code_snapshotter = CodeSnapshotter(
+                self.code_dir,
+                self.session_log_dir,
+                self.logger,
+                phase_provider=lambda: self.current_phase,
+            )
+            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_baseline')
             self.logger.event('ui_ready', {'always_on_top': True})
 
             self.watcher = ReportWatcher(
@@ -202,6 +214,7 @@ class PilotUI:
                 self.logger,
                 POLL_INTERVAL_SECONDS,
                 phase_provider=lambda: self.current_phase,
+                code_snapshotter=self.code_snapshotter,
             )
             self.watcher.start()
         except Exception as exc:
@@ -310,6 +323,9 @@ class PilotUI:
 
         if self.logger is not None and clicked:
             self.logger.event('task_done_clicked', {'phase': 'task_phase'})
+        if self.code_snapshotter is not None:
+            snapshot_trigger = 'code_snapshot_task_done' if clicked else 'code_snapshot_task_end'
+            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, snapshot_trigger)
         if self.logger is not None:
             self.logger.event('task_phase_end', {'reason': reason})
 
@@ -328,6 +344,8 @@ class PilotUI:
 
         if self.logger is not None:
             self.logger.event('review_phase_end', {'reason': 'timer_elapsed'})
+        if self.code_snapshotter is not None:
+            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_review_end')
 
         if self.watcher is not None:
             self.watcher.stop()

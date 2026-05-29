@@ -182,12 +182,19 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     hidden_passed, hidden_total = _test_counts(hidden_event)
     outputs_cleared = _last(events, 'outputs_cleared')
     outputs_cleared_data = _event_data(outputs_cleared)
+    code_dir_reset = _last(events, 'code_dir_reset')
+    code_dir_reset_data = _event_data(code_dir_reset)
     ui_ready = _last(events, 'ui_ready')
     ui_error = _last(events, 'ui_error')
     ui_close_attempts = [
         event
         for event in events
         if event.get('event_type') == 'ui_close_attempted'
+    ]
+    code_snapshots = [
+        event
+        for event in events
+        if event.get('event_type') == 'code_snapshot'
     ]
 
     totals_available = all(
@@ -268,6 +275,22 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
                 'final_report_sha256': final_report_data.get('sha256'),
                 'outputs_cleanup_performed': outputs_cleared is not None,
                 'outputs_cleanup_file_count': outputs_cleared_data.get('deleted_count'),
+                'code_dir_reset_performed': code_dir_reset is not None,
+                'code_dir_reset_source': code_dir_reset_data.get('source'),
+                'code_dir_reset_untracked_deleted_count': code_dir_reset_data.get('untracked_files_deleted_count'),
+                'code_snapshot_count': len(code_snapshots),
+                'report_py_code_snapshot_count': sum(
+                    1
+                    for event in code_snapshots
+                    if _event_data(event).get('source_path', '').endswith('src\\report.py')
+                    or _event_data(event).get('source_path', '').endswith('src/report.py')
+                ),
+                'data_loader_code_snapshot_count': sum(
+                    1
+                    for event in code_snapshots
+                    if _event_data(event).get('source_path', '').endswith('src\\data_loader.py')
+                    or _event_data(event).get('source_path', '').endswith('src/data_loader.py')
+                ),
             },
             'final_noise_labels': final_report_data.get('by_noise_labels'),
         },

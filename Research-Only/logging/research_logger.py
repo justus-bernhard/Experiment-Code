@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ class ResearchLogger:
         self.session_id = session_id
         self.condition = condition
         self._start_monotonic = time.monotonic()
+        self._lock = threading.Lock()
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def elapsed_ms(self) -> int:
@@ -42,8 +44,9 @@ class ResearchLogger:
             'elapsed_ms': self.elapsed_ms(),
             'data': data or {},
         }
-        with self.events_path.open('a', encoding='utf-8') as handle:
-            handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + '\n')
+        with self._lock:
+            with self.events_path.open('a', encoding='utf-8') as handle:
+                handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + '\n')
         return record
 
 

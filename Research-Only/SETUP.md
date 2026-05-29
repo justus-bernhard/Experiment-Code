@@ -3,6 +3,11 @@
 Before each experiment session, prepare the Python environment so participants
 can run the task commands immediately.
 
+Before running a real session, make sure the intended participant baseline in
+`Code - AUT` and `Code - AUG` is committed. The pilot UI resets the selected
+condition folder to committed `HEAD` when the participant starts, so uncommitted
+changes inside that condition folder will be discarded.
+
 From the repository root:
 
 ```powershell
