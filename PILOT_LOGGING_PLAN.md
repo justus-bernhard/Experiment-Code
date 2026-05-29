@@ -33,28 +33,39 @@ Display casing is not part of the main intervention DV. For example, `Songs with
 These items are implemented in the hidden research wrapper:
 
 ```powershell
+python Research-Only/run_pilot_ui.py
 python Research-Only/run_pilot_session.py --session-id S001 --condition AUT --code-dir "Code - AUT"
 ```
+
+`run_pilot_ui.py` is the preferred runner. `run_pilot_session.py` remains available as a terminal fallback.
 
 Supporting modules:
 
 - `Research-Only/logging/research_logger.py`
 - `Research-Only/logging/report_checks.py`
 - `Research-Only/logging/summarise_session.py`
+- `Research-Only/pilot_observer.py`
 - `Research-Only/research_verify.py`
 
 - `outputs_cleared`: recorded immediately before `session_start` after the active condition's `outputs/` folder is emptied.
-- `session_start`: recorded when the researcher starts the observer script.
+- `session_start`: recorded when the participant starts the session from the UI, or when the researcher starts the terminal fallback.
+- `participant_start_clicked`: recorded when the participant starts the UI session.
+- `task_phase_start` and `task_phase_end`: recorded around the 30-minute task phase.
+- `task_done_clicked`: recorded if the participant ends the task phase before the timer elapses.
+- `review_phase_start` and `review_phase_end`: recorded around the fixed 10-minute review phase.
 - `session_end`: recorded after post-submission checks and summary generation.
-- `submission_done`: recorded when the researcher marks the first participant "done" signal.
+- `submission_done`: recorded automatically when the UI review timer ends, or when the researcher marks the first participant "done" signal in the terminal fallback.
 - `time_to_completion_sec`: computed as `submission_done - session_start`.
 - `report_snapshot`: recorded whenever `outputs/report.json` appears or changes.
+- `report_snapshot.data.phase`: records `task_phase` or `review_phase` for UI sessions.
 - `report_snapshot_count`: count of observed report versions.
+- `task_phase_report_snapshot_count` and `review_phase_report_snapshot_count`: phase-specific snapshot counts for UI sessions.
 - `first_report_sec`: timestamp of the first observed report snapshot relative to session start.
+- `first_intervention_sec`: timestamp of the first semantically passing report snapshot relative to session start.
 - `diagnostics.artifacts.final_report_sha256`: SHA-256 hash of the last report before submission.
 - `report_outcome.semantic_pass`: whether the final report before submission has the five expected semantic noise groups.
 - `primary_outcome.intervention_binary`: whether any report snapshot before or at submission normalizes to the five expected semantic noise groups.
-- `time_to_intervention_sec`: timestamp of first semantically normalized report snapshot minus session start.
+- `primary_outcome.intervention_stage`: `task_phase`, `review_phase`, `none`, or unavailable for legacy terminal sessions.
 - `primary_outcome.intervention_source`: fixed value `first_semantic_pass_report_snapshot`.
 - `report_outcome.canonical_pass`: secondary diagnostic for exact canonical display labels.
 - `diagnostics.artifacts.dataset_sha256`: SHA-256 hash of the dataset at session start.
@@ -64,7 +75,7 @@ Supporting modules:
 - `events.jsonl`: append-only event stream using the `event.v2` envelope with event-specific data under `data`.
 - `session_summary.json`: one nested, researcher-readable `session_summary.v2` record per participant.
 
-The participant-facing workflow should remain unchanged. The wrapper should not print correctness details, hidden-check results, or label warnings during the task.
+The UI shows only neutral timing and phase information. It should not show correctness details, hidden-check results, intervention status, or label warnings during the task.
 
 ## B) To Be Implemented Next
 
@@ -96,7 +107,7 @@ These should not be treated as available pilot variables unless extra instrument
 - Dataset file-open logging is not reliable from a Python wrapper alone. It requires editor extension instrumentation, OS-level monitoring, or a controlled experiment UI.
 - Output file-open logging has the same limitation as dataset file-open logging.
 - During-task test execution timing is only reliable if commands are run through an instrumented shell/wrapper or captured by an IDE extension.
-- Active review time and review-stage intervention classification are deferred. They require explicit review-window boundaries and interaction logging.
+- Dataset file-open logging, output file-open logging, prompt logging, and during-task command logging remain unavailable unless extra instrumentation is added.
 - Running the observer from another machine is only reliable if it has real-time access to the participant filesystem. OneDrive or network-sync timestamps may distort timing.
 
 Unavailable pilot fields should be represented explicitly as unavailable, not as zero.
@@ -125,9 +136,10 @@ These were added during planning and are not core protocol items yet.
 - Add `final_report_sha256` for reproducibility.
 - Add `dataset_sha256` for provenance.
 - Add a hidden post-submission evaluator that runs public tests and hidden verifier after the participant is done.
+- Use the UI runner to enforce the 30-minute task phase, 10-minute review phase, and automatic hand-in.
 - Add a summary-to-CSV export script for easy analysis across participants.
 - Add an optional custom VS Code chat participant, such as `@study`, only if prompt logging becomes essential. This would log prompts reliably but would change the participant workflow.
 
 ## Short Summary
 
-The current logging environment runs as a hidden researcher observer script on the participant machine before the task starts. It clears the active condition's `outputs/` folder, records session start, watches `outputs/report.json`, snapshots every changed report, computes semantic normalization correctness plus strict display-label diagnostics, and waits for the researcher to mark completion. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from the nested `session_summary.json`, or from a later combined CSV export across sessions.
+The current logging environment runs as a hidden researcher observer on the participant machine. The preferred UI runner clears the active condition's `outputs/` folder when the participant starts, records session and phase events, watches `outputs/report.json`, snapshots every changed report with phase labels, computes semantic normalization correctness plus strict display-label diagnostics, enforces a 10-minute review phase, and automatically hands in at review end. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from the nested `session_summary.json`, or from a later combined CSV export across sessions.

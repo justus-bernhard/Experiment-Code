@@ -63,6 +63,16 @@ def _test_counts(event: Dict[str, Any] | None) -> tuple[int | None, int | None]:
     return data.get('passed'), data.get('total')
 
 
+def _duration_sec(start_event: Dict[str, Any] | None, end_event: Dict[str, Any] | None) -> float | None:
+    if start_event is None or end_event is None:
+        return None
+    start_ms = start_event.get('elapsed_ms')
+    end_ms = end_event.get('elapsed_ms')
+    if start_ms is None or end_ms is None:
+        return None
+    return round((float(end_ms) - float(start_ms)) / 1000, 3)
+
+
 def _semantic_label(label: str) -> str:
     return ' '.join(label.strip().lower().split())
 
@@ -118,8 +128,31 @@ def _normalization_status(data: Dict[str, Any]) -> str | None:
     return 'semantic_fail'
 
 
+def _snapshot_phase(event: Dict[str, Any]) -> str | None:
+    phase = _event_data(event).get('phase')
+    return phase if isinstance(phase, str) else None
+
+
+def _snapshot_count_by_phase(events: List[Dict[str, Any]], phase: str) -> int:
+    return sum(1 for event in events if _snapshot_phase(event) == phase)
+
+
+def _intervention_stage(first_semantic: Dict[str, Any] | None) -> str | None:
+    if first_semantic is None:
+        return 'none'
+    phase = _snapshot_phase(first_semantic)
+    if phase in {'task_phase', 'review_phase'}:
+        return phase
+    return None
+
+
 def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     session_start = _first(events, 'session_start')
+    participant_start = _first(events, 'participant_start_clicked')
+    task_phase_start = _first(events, 'task_phase_start')
+    task_phase_end = _first(events, 'task_phase_end')
+    review_phase_start = _first(events, 'review_phase_start')
+    review_phase_end = _first(events, 'review_phase_end')
     submission_done = _first(events, 'submission_done')
     session_end = _last(events, 'session_end')
 
@@ -149,6 +182,9 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
     hidden_passed, hidden_total = _test_counts(hidden_event)
     outputs_cleared = _last(events, 'outputs_cleared')
     outputs_cleared_data = _event_data(outputs_cleared)
+    ui_ready = _last(events, 'ui_ready')
+    ui_error = _last(events, 'ui_error')
+    ui_closed_attempted = _last(events, 'ui_close_attempted')
 
     totals_available = all(
         value is not None
@@ -176,6 +212,9 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             'end_utc': session_end.get('timestamp_utc') if session_end else None,
         },
         'timing': {
+            'time_to_task_start_sec': _duration_sec(session_start, task_phase_start),
+            'task_phase_duration_sec': _duration_sec(task_phase_start, task_phase_end),
+            'review_phase_duration_sec': _duration_sec(review_phase_start, review_phase_end),
             'time_to_completion_sec': (
                 round((submission_done.get('elapsed_ms') - session_start.get('elapsed_ms')) / 1000, 3)
                 if session_start and submission_done
@@ -186,6 +225,7 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         },
         'primary_outcome': {
             'intervention_binary': bool(semantic_snapshots),
+            'intervention_stage': _intervention_stage(first_semantic),
             'intervention_source': 'first_semantic_pass_report_snapshot',
         },
         'report_outcome': {
@@ -194,6 +234,8 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             'normalization_status': _normalization_status(final_report_data),
             'noise_type_count': _semantic_noise_type_count(final_report_data),
             'report_snapshot_count': len(report_snapshots),
+            'task_phase_report_snapshot_count': _snapshot_count_by_phase(report_snapshots, 'task_phase'),
+            'review_phase_report_snapshot_count': _snapshot_count_by_phase(report_snapshots, 'review_phase'),
         },
         'tests': {
             'public': {
@@ -208,6 +250,11 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         },
         'process': PROCESS_AVAILABILITY_FIELDS.copy(),
         'diagnostics': {
+            'ui': {
+                'always_on_top': _event_data(ui_ready).get('always_on_top'),
+                'closed_early': ui_closed_attempted is not None,
+                'error': _event_data(ui_error).get('error') if ui_error else None,
+            },
             'artifacts': {
                 'dataset_sha256': start_data.get('dataset_sha256'),
                 'final_report_sha256': final_report_data.get('sha256'),
