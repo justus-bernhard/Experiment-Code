@@ -1,4 +1,19 @@
-"""Run a pilot session with a small always-on-top timing UI."""
+"""Run a pilot session with a small always-on-top timing UI.
+
+Start from the repository root:
+  python Research-Only/run_pilot_ui.py
+
+Workflow:
+  1. Researcher enters session ID and selects AUT or AUG.
+  2. Researcher hands control to the participant on the ready screen.
+  3. Participant clicks Start; logging begins and the active condition's
+     outputs/ folder is cleared.
+  4. The UI runs the task phase, review phase, automatic hand-in, and
+     post-submission checks.
+
+The terminal fallback remains:
+  python Research-Only/run_pilot_session.py --session-id S001 --condition AUT --code-dir "Code - AUT"
+"""
 
 from __future__ import annotations
 
