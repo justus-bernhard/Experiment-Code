@@ -6,3 +6,7 @@ __pycache__/
 # Research runtime artifacts
 Research-Only/logs/
 Research-Only/**/__pycache__/
+
+# Participant runtime artifacts
+Code - AUT/outputs/
+Code - AUG/outputs/

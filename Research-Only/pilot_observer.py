@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import platform
 import re
 import shutil
@@ -71,8 +72,27 @@ def session_log_dir(logs_root: Path, session_id: str) -> Path:
 
 def assert_new_session(log_dir: Path) -> None:
     events_path = log_dir / 'events.jsonl'
-    if events_path.exists():
+    if not events_path.exists():
+        return
+
+    session_started = False
+    with events_path.open('r', encoding='utf-8') as handle:
+        for line_number, line in enumerate(handle, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f'Malformed JSONL event at {events_path}:{line_number}') from exc
+            if event.get('event_type') == 'session_start':
+                session_started = True
+                break
+
+    if session_started:
         raise FileExistsError(f'Session already has an events file: {events_path}')
+
+    shutil.rmtree(log_dir)
 
 
 def clear_outputs_dir(code_dir: Path) -> Dict[str, Any]:
@@ -139,12 +159,13 @@ def _clean_preview_paths(output: str) -> List[str]:
 def reset_code_dir_to_head(code_dir: Path) -> Dict[str, Any]:
     relative_code_dir = _resettable_code_dir_relative_path(code_dir)
     path_arg = str(relative_code_dir)
+    outputs_exclude = str(relative_code_dir / 'outputs')
 
     restore = _run_git(['restore', '--source', 'HEAD', '--staged', '--worktree', '--', path_arg])
     if restore.returncode != 0:
         raise RuntimeError(f'Could not reset tracked files in {path_arg}: {tail_text(restore.stderr or restore.stdout)}')
 
-    clean_preview = _run_git(['clean', '-fd', '--dry-run', '--', path_arg])
+    clean_preview = _run_git(['clean', '-fd', '--dry-run', '-e', outputs_exclude, '--', path_arg])
     if clean_preview.returncode != 0:
         raise RuntimeError(
             f'Could not preview untracked cleanup in {path_arg}: '
@@ -152,7 +173,7 @@ def reset_code_dir_to_head(code_dir: Path) -> Dict[str, Any]:
         )
 
     untracked_paths = _clean_preview_paths(clean_preview.stdout or '')
-    clean = _run_git(['clean', '-fd', '--', path_arg])
+    clean = _run_git(['clean', '-fd', '-e', outputs_exclude, '--', path_arg])
     if clean.returncode != 0:
         raise RuntimeError(f'Could not remove untracked files in {path_arg}: {tail_text(clean.stderr or clean.stdout)}')
 
