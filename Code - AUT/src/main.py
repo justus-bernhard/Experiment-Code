@@ -6,18 +6,34 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+import sys
 from pathlib import Path
 
-from .data_loader import load_dataset
-from .report import generate_report
-
 logger = logging.getLogger(__name__)
+
+
+def _load_reporting_functions():
+    try:
+        from .data_loader import load_dataset
+        from .report import generate_report
+    except ModuleNotFoundError as exc:
+        missing_package = exc.name or 'a required package'
+        print(
+            f'Missing required Python package: {missing_package}\n'
+            'Please install the task dependencies first:\n'
+            '  pip install -r requirements.txt',
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from exc
+
+    return load_dataset, generate_report
 
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     logger.info('Starting report generation')
+
+    load_dataset, generate_report = _load_reporting_functions()
 
     # Use the full dataset provided at the repository root
     # Let the loader locate the dataset (supports moved locations)

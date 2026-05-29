@@ -256,8 +256,11 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
         'diagnostics': {
             'ui': {
                 'always_on_top': _event_data(ui_ready).get('always_on_top'),
-                'closed_early': bool(ui_close_attempts),
                 'ui_close_attempted_count': len(ui_close_attempts),
+                'ui_closed_before_completion': (
+                    _event_data(session_end).get('status') in {'interrupted', 'failed'}
+                    and _last(events, 'ui_closed') is not None
+                ),
                 'error': _event_data(ui_error).get('error') if ui_error else None,
             },
             'artifacts': {

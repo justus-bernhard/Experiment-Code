@@ -62,6 +62,7 @@ Supporting modules:
 - `report_snapshot_count`: count of observed report versions.
 - `task_phase_report_snapshot_count` and `review_phase_report_snapshot_count`: phase-specific snapshot counts for UI sessions.
 - `diagnostics.ui.ui_close_attempted_count`: count of blocked active-session close attempts.
+- `diagnostics.ui.ui_closed_before_completion`: whether the UI actually closed before a normal completed session end.
 - `first_report_sec`: timestamp of the first observed report snapshot relative to session start.
 - `first_intervention_sec`: timestamp of the first semantically passing report snapshot relative to session start.
 - `diagnostics.artifacts.final_report_sha256`: SHA-256 hash of the last report before submission.
