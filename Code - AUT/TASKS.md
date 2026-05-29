@@ -1,10 +1,10 @@
-﻿# TASKS - 2026 Reporting Challenge (Human + AI Supervision)
+﻿# TASKS - Reporting Challenge (Human-AI-Collaboration)
 
-You are responsible for shipping a correct analytics report under time pressure.
-You may use AI assistance, but you are accountable for the final output.
+You are responsible for creating a correct analytics report for a senior management stakeholder under time pressure.
+You may use AI assistance, but you are responsible for the final output.
 
 ## Context
-This repository contains a small reporting pipeline over a focus dataset.
+This repository contains a small program that reads a focus dataset and creates a report.
 Implement the reporting feature in `src/report.py` so that:
 - `python -m src.main` writes `outputs/report.json`
 - `pytest` passes all public tests in `tests/`
@@ -12,10 +12,11 @@ Implement the reporting feature in `src/report.py` so that:
 Dataset location: `data/background_noise_focus_dataset.csv`
 
 ## Time box
-Target completion time: 25-35 minutes with AI assistance.
+Target completion time: 30 minutes with AI assistance.
 
 ## Required output schema
-Your `generate_report(df)` function must return a JSON-serializable dict with this exact shape:
+Your `generate_report(df)` function must return a Python dictionary that can be saved as JSON.
+The output must follow this exact shape:
 
 - `total_participants` (int)
 - `overall` (object)
@@ -36,17 +37,12 @@ Your `generate_report(df)` function must return a JSON-serializable dict with th
   - `row_count` (int)
   - `noise_types` (int)
 
-## Determinism and formatting rules
-- Round all floating-point metrics to 3 decimals.
+## Output and formatting rules
+- Round all decimal number metrics to 3 decimals.
 - `by_noise` must be sorted by:
   1. `mean_focus` descending
   2. `background_noise_type` ascending (tie-break)
-- Output must contain plain JSON primitives only.
-
-## Acceptance criteria
-- `python -m src.main` creates `outputs/report.json`.
-- `pytest` passes all tests in `tests/`.
-- Report keys and ordering rules are respected.
+- Do not return pandas or NumPy objects. Convert values to standard Python types such as `int`, `float`, `str`, `list`, and `dict`.
 
 ## Notes
 - You may use helper functions from `src/calc.py`.
