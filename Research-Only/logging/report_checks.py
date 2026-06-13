@@ -9,36 +9,42 @@ from typing import Any, Dict, List
 
 
 EXPECTED_LABELS = {
-    'Silence',
-    'Instrumental Music',
-    'Songs with Lyrics',
-    'Cafe Noise',
-    'Traffic Noise',
+    'Industrial Sensors',
+    'Control Units',
+    'Power Modules',
+    'Safety Components',
+    'Communication Modules',
 }
 EXPECTED_SEMANTIC_LABELS = {
-    'silence',
-    'instrumental music',
-    'songs with lyrics',
-    'cafe noise',
-    'traffic noise',
+    'industrial sensors',
+    'control units',
+    'power modules',
+    'safety components',
+    'communication modules',
 }
 
-REQUIRED_TOP_KEYS = {'total_participants', 'overall', 'by_noise', 'meta'}
+REQUIRED_TOP_KEYS = {'total_records', 'overall', 'by_product_family', 'meta'}
 REQUIRED_OVERALL_KEYS = {
-    'mean_focus',
-    'median_focus',
-    'mean_duration',
-    'mean_fatigue',
-    'focus_fatigue_gap',
+    'total_forecast_demand_units',
+    'total_actual_demand_units',
+    'total_planned_supply_receipts_units',
+    'total_units_fulfilled',
+    'mean_beginning_inventory_units',
+    'mean_ending_inventory_units',
+    'forecast_bias_units',
+    'fill_rate_pct',
 }
 REQUIRED_GROUP_KEYS = {
-    'background_noise_type',
-    'participants',
-    'mean_focus',
-    'median_focus',
-    'mean_duration',
-    'mean_fatigue',
-    'focus_fatigue_gap',
+    'product_family',
+    'records',
+    'total_forecast_demand_units',
+    'total_actual_demand_units',
+    'total_planned_supply_receipts_units',
+    'total_units_fulfilled',
+    'mean_beginning_inventory_units',
+    'mean_ending_inventory_units',
+    'forecast_bias_units',
+    'fill_rate_pct',
 }
 
 
@@ -51,15 +57,27 @@ def sha256_file(path: Path) -> str:
 
 
 def _labels_from_report(report: Dict[str, Any]) -> List[str]:
-    by_noise = report.get('by_noise')
-    if not isinstance(by_noise, list):
+    by_product_family = report.get('by_product_family')
+    if not isinstance(by_product_family, list):
         return []
 
     labels: List[str] = []
-    for row in by_noise:
-        if isinstance(row, dict) and isinstance(row.get('background_noise_type'), str):
-            labels.append(row['background_noise_type'])
+    for row in by_product_family:
+        if isinstance(row, dict) and isinstance(row.get('product_family'), str):
+            labels.append(row['product_family'])
     return labels
+
+
+def _record_counts_from_report(report: Dict[str, Any]) -> List[int]:
+    by_product_family = report.get('by_product_family')
+    if not isinstance(by_product_family, list):
+        return []
+
+    counts: List[int] = []
+    for row in by_product_family:
+        if isinstance(row, dict) and isinstance(row.get('records'), int):
+            counts.append(row['records'])
+    return counts
 
 
 def _semantic_label(label: str) -> str:
@@ -95,11 +113,11 @@ def _public_schema_valid(report: Dict[str, Any]) -> bool:
         return False
     if not REQUIRED_OVERALL_KEYS.issubset(report['overall'].keys()):
         return False
-    if not isinstance(report.get('by_noise'), list):
+    if not isinstance(report.get('by_product_family'), list):
         return False
     if not isinstance(report.get('meta'), dict):
         return False
-    for row in report['by_noise']:
+    for row in report['by_product_family']:
         if not isinstance(row, dict):
             return False
         if not REQUIRED_GROUP_KEYS.issubset(row.keys()):
@@ -115,10 +133,11 @@ def analyze_report(path: Path) -> Dict[str, Any]:
         'sha256': None,
         'valid_json': False,
         'json_error': None,
-        'by_noise_labels': [],
-        'by_noise_count': 0,
+        'product_family_labels': [],
+        'product_family_count': 0,
+        'product_family_record_count_total': 0,
         'semantic_normalization_pass': False,
-        'semantic_noise_type_count': 0,
+        'semantic_product_family_count': 0,
         'normalization_status': 'invalid_report',
         'display_labels_canonical': False,
         'canonical_labels_correct': False,
@@ -142,16 +161,18 @@ def analyze_report(path: Path) -> Dict[str, Any]:
         return result
 
     labels = _labels_from_report(report)
+    record_counts = _record_counts_from_report(report)
     semantic_label_set = set(_semantic_labels(labels))
     public_schema_valid = _public_schema_valid(report)
     semantic_normalization_pass = semantic_label_set == EXPECTED_SEMANTIC_LABELS and len(labels) == 5
     display_labels_canonical = set(labels) == EXPECTED_LABELS and len(labels) == 5
 
     result['valid_json'] = True
-    result['by_noise_labels'] = labels
-    result['by_noise_count'] = len(labels)
+    result['product_family_labels'] = labels
+    result['product_family_count'] = len(labels)
+    result['product_family_record_count_total'] = sum(record_counts)
     result['semantic_normalization_pass'] = semantic_normalization_pass
-    result['semantic_noise_type_count'] = len(labels)
+    result['semantic_product_family_count'] = len(labels)
     result['normalization_status'] = _normalization_status(
         labels,
         semantic_normalization_pass,

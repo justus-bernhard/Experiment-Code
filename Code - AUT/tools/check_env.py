@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 project_root = Path(__file__).resolve().parents[1]
-data_path = project_root / 'data' / 'background_noise_focus_dataset.csv'
+data_path = project_root / 'data' / 'product_family_planning_dataset.csv'
 
 print('pandas', pd.__version__)
 print('numpy', np.__version__)

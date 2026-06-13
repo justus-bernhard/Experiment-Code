@@ -20,7 +20,7 @@ Purpose: Operate as an autonomous coding agent. The human is supervising, not ex
 
 ## Repository Context
 
-- Primary dataset: `background_noise_focus_dataset.csv` (repo root).
+- Primary dataset: `product_family_planning_dataset.csv` (repo root).
 - Core implementation lives under `src/`.
 - Focus on implementing `generate_report(df)` in `src/report.py`.
 

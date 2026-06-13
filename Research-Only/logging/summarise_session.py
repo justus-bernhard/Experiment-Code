@@ -10,11 +10,11 @@ from research_logger import read_events, write_json
 
 
 EXPECTED_SEMANTIC_LABELS = {
-    'silence',
-    'instrumental music',
-    'songs with lyrics',
-    'cafe noise',
-    'traffic noise',
+    'industrial sensors',
+    'control units',
+    'power modules',
+    'safety components',
+    'communication modules',
 }
 
 
@@ -82,7 +82,7 @@ def _semantic_labels(labels: List[str]) -> set[str]:
 
 
 def _semantic_normalization_pass(data: Dict[str, Any]) -> bool:
-    labels = data.get('by_noise_labels')
+    labels = data.get('product_family_labels')
     if not isinstance(labels, list):
         return data.get('semantic_normalization_pass') is True
 
@@ -90,14 +90,19 @@ def _semantic_normalization_pass(data: Dict[str, Any]) -> bool:
     return _semantic_labels(text_labels) == EXPECTED_SEMANTIC_LABELS and len(text_labels) == 5
 
 
-def _semantic_noise_type_count(data: Dict[str, Any]) -> int | None:
-    labels = data.get('by_noise_labels')
+def _semantic_product_family_count(data: Dict[str, Any]) -> int | None:
+    labels = data.get('product_family_labels')
     if not isinstance(labels, list):
-        value = data.get('semantic_noise_type_count')
+        value = data.get('semantic_product_family_count')
         return value if value is not None else None
 
     text_labels = [label for label in labels if isinstance(label, str)]
     return len(text_labels)
+
+
+def _product_family_record_count_total(data: Dict[str, Any]) -> int | None:
+    value = data.get('product_family_record_count_total')
+    return value if isinstance(value, int) else None
 
 
 def _display_labels_canonical(data: Dict[str, Any]) -> bool | None:
@@ -114,7 +119,7 @@ def _normalization_status(data: Dict[str, Any]) -> str | None:
     if data.get('public_schema_valid') is False:
         return 'invalid_report'
 
-    labels = data.get('by_noise_labels')
+    labels = data.get('product_family_labels')
     if not isinstance(labels, list):
         return data.get('normalization_status')
 
@@ -243,7 +248,8 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
             'semantic_pass': final_semantic_pass,
             'canonical_pass': _display_labels_canonical(final_report_data),
             'normalization_status': _normalization_status(final_report_data),
-            'noise_type_count': _semantic_noise_type_count(final_report_data),
+            'product_family_count': _semantic_product_family_count(final_report_data),
+            'product_family_record_count_total': _product_family_record_count_total(final_report_data),
             'report_snapshot_count': len(report_snapshots),
             'task_phase_report_snapshot_count': _snapshot_count_by_phase(report_snapshots, 'task_phase'),
             'review_phase_report_snapshot_count': _snapshot_count_by_phase(report_snapshots, 'review_phase'),
@@ -292,7 +298,7 @@ def build_summary(events: List[Dict[str, Any]]) -> Dict[str, Any]:
                     or _event_data(event).get('source_path', '').endswith('src/data_loader.py')
                 ),
             },
-            'final_noise_labels': final_report_data.get('by_noise_labels'),
+            'final_product_family_labels': final_report_data.get('product_family_labels'),
         },
     }
     return summary

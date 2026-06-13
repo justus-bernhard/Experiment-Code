@@ -26,24 +26,23 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
     logger.info("Generating report")
 
     # TODO 1: Compute overall stats with calc.compute_overall_stats(df).
-    # Then add focus_fatigue_gap = mean_focus - mean_fatigue.
     overall: Dict[str, Any] = {}
 
-    # TODO 2: Compute grouped stats by background_noise_type.
+    # TODO 2: Compute grouped stats by product_family.
     groups = None
 
-    # TODO 3: Convert grouped rows into by_noise entries with all required
-    # metrics, including focus_fatigue_gap, then sort as specified.
-    by_noise: List[Dict[str, Any]] = []
+    # TODO 3: Convert grouped rows into by_product_family entries with all
+    # required metrics, including forecast_bias_units and fill_rate_pct.
+    by_product_family: List[Dict[str, Any]] = []
 
     # TODO 4: Build meta section and final report.
     report: Dict[str, Any] = {
-        "total_participants": 0,
+        "total_records": 0,
         "overall": overall,
-        "by_noise": by_noise,
+        "by_product_family": by_product_family,
         "meta": {
             "row_count": 0,
-            "noise_types": 0,
+            "product_families": 0,
         },
     }
 

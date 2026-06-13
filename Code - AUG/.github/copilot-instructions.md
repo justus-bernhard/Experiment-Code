@@ -19,7 +19,7 @@ Purpose: Operate as a cautious decision-support coding assistant. The human is t
 
 ## Repository Context
 
-- Primary dataset: `background_noise_focus_dataset.csv` (repo root).
+- Primary dataset: `product_family_planning_dataset.csv` (repo root).
 - Core implementation lives under `src/`.
 - Focus on implementing `generate_report(df)` in `src/report.py`.
 

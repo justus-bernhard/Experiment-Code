@@ -24,7 +24,7 @@ from report_checks import analyze_report, sha256_file  # noqa: E402
 from research_logger import ResearchLogger, tail_text  # noqa: E402
 
 
-DATA_RELATIVE_PATH = Path('data') / 'background_noise_focus_dataset.csv'
+DATA_RELATIVE_PATH = Path('data') / 'product_family_planning_dataset.csv'
 REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
 REPORT_SOURCE_RELATIVE_PATH = Path('src') / 'report.py'
 DATA_LOADER_RELATIVE_PATH = Path('src') / 'data_loader.py'

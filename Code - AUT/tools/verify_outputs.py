@@ -1,22 +1,35 @@
+from pathlib import Path
+
 import pandas as pd
 
-df = pd.read_csv('background_noise_focus_dataset.csv')
+project_root = Path(__file__).resolve().parents[1]
+df = pd.read_csv(project_root / 'data' / 'product_family_planning_dataset.csv')
 
 print('DATA SHAPE:', df.shape)
 
-# numeric summary
-nums = df.select_dtypes(include=['number'])
-desc = nums.describe().T
-print('\nNumeric summary (count, mean, 50%):')
-for col in ['participant_id','age','noise_volume_level','focus_duration_minutes','perceived_focus_score','task_completion_quality','mental_fatigue_after_task']:
-    row = desc.loc[col]
-    print(f"{col}: count={row['count']}, mean={row['mean']:.6f}, 50%={row['50%']}")
+print('\nDemand and inventory summary:')
+for col in [
+    'forecast_demand_units',
+    'actual_demand_units',
+    'beginning_inventory_units',
+    'planned_supply_receipts_units',
+    'units_fulfilled',
+    'ending_inventory_units',
+]:
+    print(f"{col}: sum={df[col].sum():.0f}, mean={df[col].mean():.3f}")
 
-# group stats by background_noise_type
-g = df.groupby('background_noise_type').agg(participants=('participant_id','count'), mean_focus=('perceived_focus_score','mean'), median_focus=('perceived_focus_score','median'), mean_duration=('focus_duration_minutes','mean'), mean_fatigue=('mental_fatigue_after_task','mean'))
-print('\nGroup by background_noise_type:')
+print('\nGroup by product_family:')
+g = df.groupby('product_family').agg(
+    records=('record_id', 'count'),
+    total_actual_demand_units=('actual_demand_units', 'sum'),
+    total_units_fulfilled=('units_fulfilled', 'sum'),
+    mean_ending_inventory_units=('ending_inventory_units', 'mean'),
+)
 print(g)
 
-# correlation
-print('\nCorrelation matrix (selected entries):')
-print(nums.corr().round(6))
+print('\nStock-flow equation valid:', bool(
+    (
+        df['ending_inventory_units']
+        == df['beginning_inventory_units'] + df['planned_supply_receipts_units'] - df['units_fulfilled']
+    ).all()
+))

@@ -8,25 +8,25 @@ Purpose: Define a functioning pilot logging layer for the collaborative disagree
 
 The experimental protocol requires logging and derived variables for:
 
-- RQ1 collaborative disagreement: whether and when the participant corrects the labeling inconsistency.
+- RQ1 collaborative disagreement: whether and when the participant corrects the product-family labeling inconsistency.
 - RQ2 blame/responsibility: post-task Likert items and awareness questions.
 - Performance: time to completion and task success.
 - Verification behavior: dataset inspection, output inspection, test execution, and active review time.
 - Additional logging: prompts and timestamps for prompts, file opens, tests, and submission.
 
-For the pilot, the intervention variable should be operationalized only through `report.json` snapshots. The first snapshot whose `by_noise` labels semantically normalize to the five expected noise groups is the first intervention event. Do not infer intervention from prompts, source-code edits, or participant intent.
+For the pilot, the intervention variable should be operationalized only through `report.json` snapshots. The first snapshot whose `by_product_family` labels semantically normalize to the five expected product families is the first intervention event. Do not infer intervention from prompts, source-code edits, or participant intent.
 
-Expected semantic noise groups:
+Expected semantic product families:
 
 ```text
-silence
-instrumental music
-songs with lyrics
-cafe noise
-traffic noise
+industrial sensors
+control units
+power modules
+safety components
+communication modules
 ```
 
-Display casing is not part of the main intervention DV. For example, `Songs with Lyrics`, `Songs With Lyrics`, and `songs with lyrics` all count as the same semantic group. Exact canonical display labels are retained as a secondary diagnostic only.
+Display casing is not part of the main intervention DV. For example, `Industrial Sensors`, `INDUSTRIAL SENSORS`, and `industrial sensors` all count as the same semantic group. Exact canonical display labels are retained as a secondary diagnostic only.
 
 ## A) Implemented For Pilot
 
@@ -66,8 +66,8 @@ Supporting modules:
 - `first_report_sec`: timestamp of the first observed report snapshot relative to session start.
 - `first_intervention_sec`: timestamp of the first semantically passing report snapshot relative to session start.
 - `diagnostics.artifacts.final_report_sha256`: SHA-256 hash of the last report before submission.
-- `report_outcome.semantic_pass`: whether the final report before submission has the five expected semantic noise groups.
-- `primary_outcome.intervention_binary`: whether any report snapshot before or at submission normalizes to the five expected semantic noise groups.
+- `report_outcome.semantic_pass`: whether the final report before submission has the five expected semantic product families.
+- `primary_outcome.intervention_binary`: whether any report snapshot before or at submission normalizes to the five expected semantic product families.
 - `primary_outcome.intervention_stage`: `task_phase`, `review_phase`, `none`, or unavailable for legacy terminal sessions.
 - `primary_outcome.intervention_source`: fixed value `first_semantic_pass_report_snapshot`.
 - `report_outcome.canonical_pass`: secondary diagnostic for exact canonical display labels.
@@ -134,7 +134,7 @@ These were added during planning and are not core protocol items yet.
 
 - Store every changed `report.json` as a copied snapshot under `Research-Only/logs/<session_id>/report_snapshots/`.
 - Compute semantic normalization correctness and strict canonical-display correctness for each report snapshot immediately.
-- Store `valid_json`, `by_noise_labels`, `by_noise_count`, `semantic_normalization_pass`, `semantic_noise_type_count`, `normalization_status`, `display_labels_canonical`, and report hash for every snapshot. In `session_summary.json`, these are summarized as `semantic_pass`, `canonical_pass`, `normalization_status`, and `noise_type_count`. `noise_type_count` is the number of reported `by_noise` groups after participant processing; uncorrected label splits should therefore appear as counts above 5.
+- Store `valid_json`, `product_family_labels`, `product_family_count`, `product_family_record_count_total`, `semantic_normalization_pass`, `semantic_product_family_count`, `normalization_status`, `display_labels_canonical`, and report hash for every snapshot. In `session_summary.json`, these are summarized as `semantic_pass`, `canonical_pass`, `normalization_status`, `product_family_count`, and `product_family_record_count_total`. `product_family_count` is the number of reported product-family groups after participant processing; uncorrected label splits should therefore appear as counts above 5.
 - Include `intervention_source` to make the operational definition explicit in the summary.
 - Add `final_report_sha256` for reproducibility.
 - Add `dataset_sha256` for provenance.
@@ -145,4 +145,4 @@ These were added during planning and are not core protocol items yet.
 
 ## Short Summary
 
-The current logging environment runs as a hidden researcher observer on the participant machine. The preferred UI runner clears the active condition's `outputs/` folder when the participant starts, records session and phase events, watches `outputs/report.json`, snapshots every changed report with phase labels, computes semantic normalization correctness plus strict display-label diagnostics, enforces a 10-minute review phase, and automatically hands in at review end. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from the nested `session_summary.json`, or from a later combined CSV export across sessions.
+The current logging environment runs as a hidden researcher observer on the participant machine. The preferred UI runner clears the active condition's `outputs/` folder when the participant starts, records session and phase events, watches `outputs/report.json`, snapshots every changed report with phase labels, computes semantic product-family normalization correctness plus strict display-label diagnostics, enforces a 10-minute review phase, and automatically hands in at review end. After completion, it runs hidden and public checks and writes `events.jsonl` plus `session_summary.json` under `Research-Only/logs/<session_id>/`. The main researcher evaluates data primarily from the nested `session_summary.json`, or from a later combined CSV export across sessions.

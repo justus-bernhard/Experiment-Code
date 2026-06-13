@@ -18,15 +18,15 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_RELATIVE_PATH = Path('data') / 'background_noise_focus_dataset.csv'
+DATA_RELATIVE_PATH = Path('data') / 'product_family_planning_dataset.csv'
 REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
 KNOWN_CODE_DIRS = ('Code - AUT', 'Code - AUG', 'Code - Solution')
 LABEL_MAP = {
-    'silence': 'Silence',
-    'instrumental music': 'Instrumental Music',
-    'songs with lyrics': 'Songs with Lyrics',
-    'cafe noise': 'Cafe Noise',
-    'traffic noise': 'Traffic Noise',
+    'industrial sensors': 'Industrial Sensors',
+    'control units': 'Control Units',
+    'power modules': 'Power Modules',
+    'safety components': 'Safety Components',
+    'communication modules': 'Communication Modules',
 }
 EXPECTED_LABELS = set(LABEL_MAP.values())
 
@@ -88,39 +88,34 @@ def _semantic_label(label: str) -> str:
 
 def _clean(df: pd.DataFrame) -> pd.DataFrame:
     clean = df.copy()
-
-    # Canonicalize subtle label variants (case + trailing spaces).
-    clean['background_noise_type'] = clean['background_noise_type'].astype(str).str.strip().str.lower()
-
-    # Map canonical lowercase labels back to display labels.
-    clean['background_noise_type'] = clean['background_noise_type'].map(LABEL_MAP).fillna(clean['background_noise_type'])
-
+    clean['product_family'] = clean['product_family'].astype(str).map(_semantic_label)
+    clean['product_family'] = clean['product_family'].map(LABEL_MAP).fillna(clean['product_family'])
     return clean
 
 
 def _normalize_actual_report_labels(report: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize display-label variants before comparing report semantics."""
     normalized = copy.deepcopy(report)
-    by_noise = normalized.get('by_noise')
-    if not isinstance(by_noise, list):
+    by_product_family = normalized.get('by_product_family')
+    if not isinstance(by_product_family, list):
         return normalized
 
-    for row in by_noise:
+    for row in by_product_family:
         if not isinstance(row, dict):
             continue
-        label = row.get('background_noise_type')
+        label = row.get('product_family')
         if not isinstance(label, str):
             continue
         semantic_label = _semantic_label(label)
-        row['background_noise_type'] = LABEL_MAP.get(semantic_label, label.strip())
+        row['product_family'] = LABEL_MAP.get(semantic_label, label.strip())
 
     return normalized
 
 
 def _assert_cleaning_contract(raw: pd.DataFrame, clean: pd.DataFrame) -> None:
-    """Assert that label cleaning collapses noisy variants to canonical labels."""
-    raw_unique = set(raw['background_noise_type'].astype(str).unique())
-    clean_unique = set(clean['background_noise_type'].astype(str).unique())
+    """Assert that label cleaning collapses sparse variants to canonical labels."""
+    raw_unique = set(raw['product_family'].astype(str).unique())
+    clean_unique = set(clean['product_family'].astype(str).unique())
 
     if not len(clean_unique) < len(raw_unique):
         raise AssertionError(
@@ -128,62 +123,84 @@ def _assert_cleaning_contract(raw: pd.DataFrame, clean: pd.DataFrame) -> None:
         )
     if clean_unique != EXPECTED_LABELS:
         raise AssertionError(
-            'Canonical label set mismatch: '
+            'Canonical product-family set mismatch: '
             f'expected={sorted(EXPECTED_LABELS)} actual={sorted(clean_unique)}'
         )
 
 
-def _expected(df: pd.DataFrame) -> Dict[str, Any]:
-    total_participants = int(df['participant_id'].nunique())
+def _fill_rate(units_fulfilled: float, actual_demand: float) -> float:
+    if float(actual_demand) == 0:
+        return 0.0
+    return float(units_fulfilled) / float(actual_demand) * 100
 
-    overall_mean_focus = _round3(df['perceived_focus_score'].mean())
-    overall_median_focus = _round3(df['perceived_focus_score'].median())
-    overall_mean_duration = _round3(df['focus_duration_minutes'].mean())
-    overall_mean_fatigue = _round3(df['mental_fatigue_after_task'].mean())
 
-    overall = {
-        'mean_focus': overall_mean_focus,
-        'median_focus': overall_median_focus,
-        'mean_duration': overall_mean_duration,
-        'mean_fatigue': overall_mean_fatigue,
-        'focus_fatigue_gap': _round3(overall_mean_focus - overall_mean_fatigue),
+def _metrics(df: pd.DataFrame) -> Dict[str, float]:
+    total_forecast = float(df['forecast_demand_units'].sum())
+    total_actual = float(df['actual_demand_units'].sum())
+    total_supply = float(df['planned_supply_receipts_units'].sum())
+    total_fulfilled = float(df['units_fulfilled'].sum())
+    return {
+        'total_forecast_demand_units': _round3(total_forecast),
+        'total_actual_demand_units': _round3(total_actual),
+        'total_planned_supply_receipts_units': _round3(total_supply),
+        'total_units_fulfilled': _round3(total_fulfilled),
+        'mean_beginning_inventory_units': _round3(df['beginning_inventory_units'].mean()),
+        'mean_ending_inventory_units': _round3(df['ending_inventory_units'].mean()),
+        'forecast_bias_units': _round3(total_actual - total_forecast),
+        'fill_rate_pct': _round3(_fill_rate(total_fulfilled, total_actual)),
     }
 
-    groups = df.groupby('background_noise_type').agg(
-        participants=('participant_id', 'count'),
-        mean_focus=('perceived_focus_score', 'mean'),
-        median_focus=('perceived_focus_score', 'median'),
-        mean_duration=('focus_duration_minutes', 'mean'),
-        mean_fatigue=('mental_fatigue_after_task', 'mean'),
-    ).reset_index()
 
-    by_noise = []
-    for _, row in groups.iterrows():
-        mean_focus = _round3(row['mean_focus'])
-        mean_fatigue = _round3(row['mean_fatigue'])
-        by_noise.append(
-            {
-                'background_noise_type': str(row['background_noise_type']),
-                'participants': int(row['participants']),
-                'mean_focus': mean_focus,
-                'median_focus': _round3(row['median_focus']),
-                'mean_duration': _round3(row['mean_duration']),
-                'mean_fatigue': mean_fatigue,
-                'focus_fatigue_gap': _round3(mean_focus - mean_fatigue),
-            }
-        )
+def _expected(df: pd.DataFrame) -> Dict[str, Any]:
+    groups = df.groupby('product_family')
 
-    by_noise = sorted(by_noise, key=lambda x: (-x['mean_focus'], x['background_noise_type']))
+    by_product_family = []
+    for label, group in groups:
+        row = {
+            'product_family': str(label),
+            'records': int(len(group)),
+        }
+        row.update(_metrics(group))
+        by_product_family.append(row)
+
+    by_product_family = sorted(
+        by_product_family,
+        key=lambda x: (-x['total_actual_demand_units'], x['product_family']),
+    )
 
     return {
-        'total_participants': total_participants,
-        'overall': overall,
-        'by_noise': by_noise,
+        'total_records': int(len(df)),
+        'overall': _metrics(df),
+        'by_product_family': by_product_family,
         'meta': {
             'row_count': int(len(df)),
-            'noise_types': int(df['background_noise_type'].nunique()),
+            'product_families': int(df['product_family'].nunique()),
         },
     }
+
+
+def _assert_dataset_contract(df: pd.DataFrame) -> None:
+    if not (
+        df['ending_inventory_units']
+        == df['beginning_inventory_units'] + df['planned_supply_receipts_units'] - df['units_fulfilled']
+    ).all():
+        raise AssertionError('Dataset stock-flow equation failed')
+    if (df[[
+        'forecast_demand_units',
+        'actual_demand_units',
+        'beginning_inventory_units',
+        'planned_supply_receipts_units',
+        'units_fulfilled',
+        'ending_inventory_units',
+    ]] < 0).any().any():
+        raise AssertionError('Dataset contains negative planning values')
+    if (df['units_fulfilled'] > df['actual_demand_units']).any():
+        raise AssertionError('Dataset contains fulfilment above actual demand')
+    if (
+        df['units_fulfilled']
+        > df['beginning_inventory_units'] + df['planned_supply_receipts_units']
+    ).any():
+        raise AssertionError('Dataset contains fulfilment above available units')
 
 
 def main() -> int:
@@ -203,6 +220,7 @@ def main() -> int:
         parser.error(f'Missing report: {report_path}')
 
     raw = pd.read_csv(data_path)
+    _assert_dataset_contract(raw)
     clean = _clean(raw)
     _assert_cleaning_contract(raw, clean)
     expected = _expected(clean)
