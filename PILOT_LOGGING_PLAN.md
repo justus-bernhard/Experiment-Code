@@ -26,7 +26,7 @@ safety components
 communication modules
 ```
 
-Display casing is not part of the main intervention DV. For example, `Industrial Sensors`, `INDUSTRIAL SENSORS`, and `industrial sensors` all count as the same semantic group. Exact canonical display labels are retained as a secondary diagnostic only.
+Display casing and surrounding whitespace are not part of the main intervention DV. For example, `Industrial Sensors`, `industrial sensors`, and `Industrial Sensors ` all count as the same semantic group. Exact canonical display labels are retained as a secondary diagnostic only.
 
 ## A) Implemented For Pilot
 

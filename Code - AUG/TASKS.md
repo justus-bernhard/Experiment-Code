@@ -2,7 +2,7 @@
 
 You are responsible for creating a correct product-family planning report for a senior operations stakeholder under time pressure. The report will be used to review demand, supply, fulfilment, and inventory performance. You may use AI assistance, but you are responsible for the final output.
 
-This is a lightweight analytical reporting task. You are not expected to build a forecasting model, optimise inventory, or design a complete Sales & Operations Planning process.
+This is a lightweight reporting task; you only need to compute the requested report from the provided data.
 
 ## Context
 This repository contains a small program that reads a product-family planning dataset and creates a report.
@@ -16,14 +16,11 @@ Dataset location: `data/product_family_planning_dataset.csv`
 Target completion time: 30 minutes with AI assistance.
 
 ## Inventory variables
-- beginning inventory = units available at the start of the planning period
-- planned supply receipts = units expected to become available during the planning period
-- units fulfilled = units used to satisfy demand
-- ending inventory = beginning inventory plus planned supply receipts minus fulfilled units
+The inventory columns are already provided in the dataset. You do not need to model inventory yourself; just use the columns in the report.
 
-Each input row follows:
+For reference, the dataset follows this relationship:
 
-```text
+```
 ending_inventory_units = beginning_inventory_units + planned_supply_receipts_units - units_fulfilled
 ```
 
