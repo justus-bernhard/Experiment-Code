@@ -143,6 +143,13 @@ def test_generate_report_is_deterministic_public():
     assert r1 == r2
 
 
+def test_report_rejects_extra_top_level_keys_public():
+    df = pd.read_csv(DATA_PATH)
+    r = report.generate_report(df)
+
+    assert set(r.keys()) == REQUIRED_TOP_KEYS
+
+
 def test_rounding_rule_public():
     df = pd.read_csv(DATA_PATH)
     r = report.generate_report(df)
