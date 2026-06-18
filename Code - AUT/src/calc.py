@@ -6,13 +6,6 @@ from typing import Dict
 import pandas as pd
 
 
-def compute_fill_rate_pct(units_fulfilled: float, actual_demand_units: float) -> float:
-    """Return fulfilment as a percentage of actual demand."""
-    if float(actual_demand_units) == 0:
-        return 0.0
-    return float(units_fulfilled) / float(actual_demand_units) * 100
-
-
 def compute_overall_stats(df: pd.DataFrame) -> Dict[str, float]:
     """Compute overall product-family planning metrics."""
     total_forecast = float(df['forecast_demand_units'].sum())
@@ -27,8 +20,8 @@ def compute_overall_stats(df: pd.DataFrame) -> Dict[str, float]:
         'total_units_fulfilled': total_fulfilled,
         'mean_beginning_inventory_units': float(df['beginning_inventory_units'].mean()),
         'mean_ending_inventory_units': float(df['ending_inventory_units'].mean()),
-        'forecast_bias_units': total_actual - total_forecast,
-        'fill_rate_pct': compute_fill_rate_pct(total_fulfilled, total_actual),
+        'forecast_bias_units': _compute_forecast_bias_units(total_actual, total_forecast),
+        'fill_rate_pct': _compute_fill_rate_pct(total_fulfilled, total_actual),
     }
 
 
@@ -44,11 +37,28 @@ def compute_group_stats(df: pd.DataFrame, group_col: str = 'product_family') -> 
         mean_ending_inventory_units=('ending_inventory_units', 'mean'),
     ).reset_index()
 
-    grouped['forecast_bias_units'] = (
-        grouped['total_actual_demand_units'] - grouped['total_forecast_demand_units']
+    grouped['forecast_bias_units'] = grouped.apply(
+        lambda row: _compute_forecast_bias_units(
+            row['total_actual_demand_units'],
+            row['total_forecast_demand_units'],
+        ),
+        axis=1,
     )
     grouped['fill_rate_pct'] = grouped.apply(
-        lambda row: compute_fill_rate_pct(row['total_units_fulfilled'], row['total_actual_demand_units']),
+        lambda row: _compute_fill_rate_pct(row['total_units_fulfilled'], row['total_actual_demand_units']),
         axis=1,
     )
     return grouped
+
+
+# Internal metric helpers used by the dataframe-level functions above.
+def _compute_forecast_bias_units(actual_demand_units: float, forecast_demand_units: float) -> float:
+    """Return actual demand minus forecast demand."""
+    return float(actual_demand_units) - float(forecast_demand_units)
+
+
+def _compute_fill_rate_pct(units_fulfilled: float, actual_demand_units: float) -> float:
+    """Return fulfilment as a percentage of actual demand."""
+    if float(actual_demand_units) == 0:
+        return 0.0
+    return float(units_fulfilled) / float(actual_demand_units) * 100

@@ -1,46 +1,26 @@
 # TASKS - Product-Family Planning Report
+## Task Overview
+In this task, you will create a product-family planning report for a senior operations stakeholder. Your code is not assessed for style or efficiency. The main deliverable is `outputs/report.json`. Please make sure the report itself is clear, correct, and suitable for the senior operations stakeholder.
 
-Create a product-family planning report for a senior operations stakeholder.
-The report should summarize demand, supply, fulfilment, and inventory performance from the provided dataset.
+## AI Usage
+You may use AI only as an in-line coding assistant.
 
-This is a lightweight reporting task. Compute the requested report from the provided data.
-You may use AI assistance, but you are responsible for the final output.
+The AI can help in two ways:
+1) it can review code and suggest fixes, or
+2) it can modify selected code based on a prompt you provide.
 
-## Files
-- Dataset: `data/product_family_planning_dataset.csv`
+You should decide the workflow, run commands yourself, and choose whether to accept or decline any AI suggestions. You remain responsible for the final report.
+
+## Commands
+Produce report: `python -m src.main`
+Run public tests: `python -m pytest`
+
+## File locations
+- Dataset: `data/product_family_planning_dataset.csv` - each row is one planning record for a month, region, and product family.
 - Report code to edit: `src/report.py`
 - Output file: `outputs/report.json`
 
 The `src` folder contains the source code. `src/main.py` runs the program, `src/data_loader.py` loads the dataset, and `src/calc.py` contains helper calculations.
-
-## Commands
-Run the report program:
-
-```
-python -m src.main
-```
-
-Run the public tests:
-
-```
-pytest
-```
-
-After running the program, inspect the generated report at:
-
-```
-outputs/report.json
-```
-
-## Dataset Note
-Each row is one planning record for a month, region, and product family.
-The inventory columns are already provided; you do not need to model inventory yourself.
-
-For reference, each row follows this relationship:
-
-```
-ending_inventory_units = beginning_inventory_units + planned_supply_receipts_units - units_fulfilled
-```
 
 ## Required Report
 Your `generate_report(df)` function must return a JSON-compatible Python dictionary with exactly these top-level keys:
@@ -49,9 +29,7 @@ Your `generate_report(df)` function must return a JSON-compatible Python diction
 - `by_product_family`
 - `meta`
 
-Do not add extra top-level keys.
-
-### `overall`
+### For `overall`
 Include:
 - `total_forecast_demand_units`
 - `total_actual_demand_units`
@@ -68,7 +46,7 @@ Use:
 
 If total actual demand is zero, report `fill_rate_pct` as `0.0`.
 
-### `by_product_family`
+### For `by_product_family`
 Return one object per product family. Each object must include:
 - `product_family`
 - `records`
