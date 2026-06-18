@@ -46,5 +46,10 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
         },
     }
 
+    # TODO 5: Run "python -m src.main" to generate outputs/report.json.
+    # Run "pytest" to check the public tests.
+    # The tests provide a general indication, but they may not cover every aspect
+    # of whether the report is clear, correct, and useful for the senior operations stakeholder.
+    # You are responsible for reviewing the final report before submission.
     logger.info("Report generated")
     return report

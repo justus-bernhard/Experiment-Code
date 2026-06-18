@@ -1,66 +1,90 @@
 # TASKS - Product-Family Planning Report
 
-You are responsible for creating a correct product-family planning report for a senior operations stakeholder under time pressure. The report will be used to review demand, supply, fulfilment, and inventory performance. You may use AI assistance, but you are responsible for the final output.
+Create a product-family planning report for a senior operations stakeholder.
+The report should summarize demand, supply, fulfilment, and inventory performance from the provided dataset.
 
-This is a lightweight reporting task; you only need to compute the requested report from the provided data.
+This is a lightweight reporting task. Compute the requested report from the provided data.
+You may use AI assistance, but you are responsible for the final output.
 
-## Context
-This repository contains a small program that reads a product-family planning dataset and creates a report.
-Implement the reporting feature in `src/report.py` so that:
-- `python -m src.main` writes `outputs/report.json`
-- `pytest` passes all public tests in `tests/`
+## Files
+- Dataset: `data/product_family_planning_dataset.csv`
+- Report code to edit: `src/report.py`
+- Output file: `outputs/report.json`
 
-Dataset location: `data/product_family_planning_dataset.csv`
+The `src` folder contains the source code. `src/main.py` runs the program, `src/data_loader.py` loads the dataset, and `src/calc.py` contains helper calculations.
 
-## Time box
-Target completion time: 30 minutes with AI assistance.
+## Commands
+Run the report program:
 
-## Inventory variables
-The inventory columns are already provided in the dataset. You do not need to model inventory yourself; just use the columns in the report.
+```
+python -m src.main
+```
 
-For reference, the dataset follows this relationship:
+Run the public tests:
+
+```
+pytest
+```
+
+After running the program, inspect the generated report at:
+
+```
+outputs/report.json
+```
+
+## Dataset Note
+Each row is one planning record for a month, region, and product family.
+The inventory columns are already provided; you do not need to model inventory yourself.
+
+For reference, each row follows this relationship:
 
 ```
 ending_inventory_units = beginning_inventory_units + planned_supply_receipts_units - units_fulfilled
 ```
 
-## Required output schema
-Your `generate_report(df)` function must return a Python dictionary that can be saved as JSON.
-The output must follow this exact shape:
+## Required Report
+Your `generate_report(df)` function must return a JSON-compatible Python dictionary with exactly these top-level keys:
+- `total_records`
+- `overall`
+- `by_product_family`
+- `meta`
 
-- `total_records` (int)
-- `overall` (object)
-  - `total_forecast_demand_units` (number)
-  - `total_actual_demand_units` (number)
-  - `total_planned_supply_receipts_units` (number)
-  - `total_units_fulfilled` (number)
-  - `mean_beginning_inventory_units` (number)
-  - `mean_ending_inventory_units` (number)
-  - `forecast_bias_units` (number) = `total_actual_demand_units - total_forecast_demand_units`
-  - `fill_rate_pct` (number) = `total_units_fulfilled / total_actual_demand_units * 100`
-- `by_product_family` (array of objects)
-  - `product_family` (str)
-  - `records` (int)
-  - `total_forecast_demand_units` (number)
-  - `total_actual_demand_units` (number)
-  - `total_planned_supply_receipts_units` (number)
-  - `total_units_fulfilled` (number)
-  - `mean_beginning_inventory_units` (number)
-  - `mean_ending_inventory_units` (number)
-  - `forecast_bias_units` (number)
-  - `fill_rate_pct` (number)
-- `meta` (object)
-  - `row_count` (int)
-  - `product_families` (int)
+Do not add extra top-level keys.
 
-## Output and formatting rules
-- Round all decimal number metrics to 3 decimals.
-- If total actual demand is zero, report `fill_rate_pct` as `0.0`.
-- `by_product_family` must be sorted by:
-  1. `total_actual_demand_units` descending
-  2. `product_family` ascending (tie-break)
-- Do not return pandas or NumPy objects. Convert values to standard Python types such as `int`, `float`, `str`, `list`, and `dict`.
+### `overall`
+Include:
+- `total_forecast_demand_units`
+- `total_actual_demand_units`
+- `total_planned_supply_receipts_units`
+- `total_units_fulfilled`
+- `mean_beginning_inventory_units`
+- `mean_ending_inventory_units`
+- `forecast_bias_units`
+- `fill_rate_pct`
 
-## Notes
-- You may use helper functions from `src/calc.py`.
-- Do not modify tests.
+Use:
+- `forecast_bias_units = total_actual_demand_units - total_forecast_demand_units`
+- `fill_rate_pct = total_units_fulfilled / total_actual_demand_units * 100`
+
+If total actual demand is zero, report `fill_rate_pct` as `0.0`.
+
+### `by_product_family`
+Return one object per product family. Each object must include:
+- `product_family`
+- `records`
+- the same eight metrics listed under `overall`
+
+Sort `by_product_family` by:
+1. `total_actual_demand_units` descending
+2. `product_family` ascending for ties
+
+### `meta`
+Include:
+- `row_count`
+- `product_families`
+
+## Formatting Rules
+- Sum demand, supply, and fulfilment columns.
+- Average beginning and ending inventory columns.
+- Round decimal metrics to 3 decimals.
+- Use ordinary JSON-compatible Python types only, not pandas or NumPy objects.
