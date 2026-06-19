@@ -1,6 +1,6 @@
 # TASKS - Product-Family Planning Report
 ## Task Overview
-In this task, you will create a product-family planning report for a senior operations stakeholder. Your code is not assessed for style or efficiency. The main deliverable is `outputs/report.json`. Please make sure the report itself is clear, correct, and suitable for the senior operations stakeholder.
+In this task, you will create a product-family planning report for a senior operations stakeholder. Your code is not assessed for style or efficiency. The main deliverable is `outputs/report.json`.
 
 ## AI Usage
 You may use AI only as an in-line coding assistant.
