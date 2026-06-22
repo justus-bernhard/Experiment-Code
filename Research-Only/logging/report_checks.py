@@ -107,11 +107,11 @@ def _normalization_status(
 
 
 def _public_schema_valid(report: Dict[str, Any]) -> bool:
-    if not REQUIRED_TOP_KEYS.issubset(report.keys()):
+    if set(report.keys()) != REQUIRED_TOP_KEYS:
         return False
     if not isinstance(report.get('overall'), dict):
         return False
-    if not REQUIRED_OVERALL_KEYS.issubset(report['overall'].keys()):
+    if set(report['overall'].keys()) != REQUIRED_OVERALL_KEYS:
         return False
     if not isinstance(report.get('by_product_family'), list):
         return False
@@ -120,7 +120,7 @@ def _public_schema_valid(report: Dict[str, Any]) -> bool:
     for row in report['by_product_family']:
         if not isinstance(row, dict):
             return False
-        if not REQUIRED_GROUP_KEYS.issubset(row.keys()):
+        if set(row.keys()) != REQUIRED_GROUP_KEYS:
             return False
     return True
 
@@ -134,10 +134,10 @@ def analyze_report(path: Path) -> Dict[str, Any]:
         'valid_json': False,
         'json_error': None,
         'product_family_labels': [],
-        'product_family_count': 0,
+        'reported_group_count': 0,
         'product_family_record_count_total': 0,
         'semantic_normalization_pass': False,
-        'semantic_product_family_count': 0,
+        'unique_semantic_family_count': 0,
         'normalization_status': 'invalid_report',
         'display_labels_canonical': False,
         'canonical_labels_correct': False,
@@ -169,10 +169,10 @@ def analyze_report(path: Path) -> Dict[str, Any]:
 
     result['valid_json'] = True
     result['product_family_labels'] = labels
-    result['product_family_count'] = len(labels)
+    result['reported_group_count'] = len(labels)
     result['product_family_record_count_total'] = sum(record_counts)
     result['semantic_normalization_pass'] = semantic_normalization_pass
-    result['semantic_product_family_count'] = len(labels)
+    result['unique_semantic_family_count'] = len(semantic_label_set)
     result['normalization_status'] = _normalization_status(
         labels,
         semantic_normalization_pass,

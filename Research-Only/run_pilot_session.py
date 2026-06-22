@@ -22,10 +22,9 @@ LOGGING_DIR = RESEARCH_DIR / 'logging'
 sys.path.insert(0, str(LOGGING_DIR))
 
 from pilot_observer import (  # noqa: E402
-    REPORT_SOURCE_RELATIVE_PATH,
-    CodeSnapshotter,
     REPORT_RELATIVE_PATH,
     ReportWatcher,
+    SessionCheckpointManager,
     assert_new_session,
     clear_outputs_dir,
     relative,
@@ -35,8 +34,10 @@ from pilot_observer import (  # noqa: E402
     run_hidden_verifier,
     run_public_tests,
     session_start_data,
+    session_log_dir,
 )
 from research_logger import ResearchLogger  # noqa: E402
+from report_checks import sha256_file  # noqa: E402
 from summarise_session import summarize_log_dir  # noqa: E402
 
 
@@ -74,31 +75,36 @@ def main() -> int:
     args = parser.parse_args()
     logger: ResearchLogger | None = None
     watcher: ReportWatcher | None = None
-    code_snapshotter: CodeSnapshotter | None = None
-    session_log_dir: Path | None = None
+    checkpoint_manager: SessionCheckpointManager | None = None
+    session_dir: Path | None = None
 
     try:
         code_dir = resolve_code_dir(args.code_dir)
         log_dir = resolve_logs_root(args.logs_root)
-        session_log_dir = log_dir / args.session_id
+        session_dir = session_log_dir(log_dir, args.session_id)
         try:
-            assert_new_session(session_log_dir)
+            assert_new_session(session_dir)
         except FileExistsError as exc:
             parser.error(str(exc))
 
-        logger = ResearchLogger(session_log_dir, args.session_id, args.condition)
+        logger = ResearchLogger(session_dir, args.session_id, args.condition)
         logger.event('code_dir_reset', reset_code_dir_to_head(code_dir))
         logger.event('outputs_cleared', clear_outputs_dir(code_dir))
-        logger.event('session_start', session_start_data(args.session_id, args.condition, code_dir))
-        code_snapshotter = CodeSnapshotter(code_dir, session_log_dir, logger)
-        code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_baseline')
+        logger.event('session_start', session_start_data(args.session_id, args.condition, code_dir, runner='terminal'))
+        checkpoint_manager = SessionCheckpointManager(code_dir, session_dir, logger, runner='terminal')
+        checkpoint_manager.capture_baseline(runner_metadata={
+            'script_path': 'Research-Only/run_pilot_session.py',
+            'script_sha256': sha256_file(Path(__file__)),
+            'task_phase_seconds': None,
+            'review_phase_seconds': None,
+        })
 
         watcher = ReportWatcher(
             code_dir,
-            session_log_dir,
+            session_dir,
             logger,
             args.poll_interval_sec,
-            code_snapshotter=code_snapshotter,
+            checkpoint_manager=checkpoint_manager,
         )
         watcher.start()
 
@@ -108,10 +114,13 @@ def main() -> int:
         print('Press ENTER when participant declares done.')
         input()
 
-        code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_task_done')
         watcher.stop()
         watcher.check_once()
-        code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_review_end')
+        checkpoint_manager.capture(
+            checkpoint_type='review_end_handin',
+            trigger='researcher_marked',
+            phase=None,
+        )
         logger.event('submission_done', {'source': 'researcher_marked'})
 
         # Hidden verifier must run before public tests, because public tests may
@@ -120,16 +129,16 @@ def main() -> int:
         run_public_tests(code_dir, args.command_timeout_sec, logger)
         logger.event('session_end', {'status': 'completed'})
 
-        summarize_log_dir(session_log_dir)
-        print(f'Summary written to {relative(session_log_dir / "session_summary.json")}')
+        summarize_log_dir(session_dir)
+        print(f'Summary written to {relative(session_dir / "session_summary.json")}')
         return 0
     except KeyboardInterrupt:
         if watcher is not None:
             watcher.stop()
         if logger is not None:
             logger.event('session_end', {'status': 'interrupted'})
-            if session_log_dir is not None:
-                summarize_log_dir(session_log_dir)
+            if session_dir is not None:
+                summarize_log_dir(session_dir)
         print('Observer interrupted before completion.', file=sys.stderr)
         return 130
     except Exception as exc:
@@ -137,8 +146,8 @@ def main() -> int:
             watcher.stop()
         if logger is not None:
             logger.event('session_end', {'status': 'failed', 'error': str(exc)})
-            if session_log_dir is not None:
-                summarize_log_dir(session_log_dir)
+            if session_dir is not None:
+                summarize_log_dir(session_dir)
         print(f'Observer failed: {exc}', file=sys.stderr)
         return 1
 

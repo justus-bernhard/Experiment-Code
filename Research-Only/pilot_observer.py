@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import platform
 import re
 import shutil
@@ -21,19 +20,22 @@ if str(LOGGING_DIR) not in sys.path:
     sys.path.insert(0, str(LOGGING_DIR))
 
 from report_checks import analyze_report, sha256_file  # noqa: E402
-from research_logger import ResearchLogger, tail_text  # noqa: E402
+from research_logger import ResearchLogger, tail_text, utc_now_iso, write_json  # noqa: E402
 
 
 DATA_RELATIVE_PATH = Path('data') / 'product_family_planning_dataset.csv'
 REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
 REPORT_SOURCE_RELATIVE_PATH = Path('src') / 'report.py'
-DATA_LOADER_RELATIVE_PATH = Path('src') / 'data_loader.py'
 HIDDEN_VERIFIER_PATH = RESEARCH_DIR / 'research_verify.py'
 
 KNOWN_CONDITIONS = {
     'AUT': 'Code - AUT',
     'AUG': 'Code - AUG',
 }
+
+SESSION_ID_PATTERN = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z')
+EXCLUDED_WORKSPACE_PARTS = {'.git', '__pycache__', '.pytest_cache', '.venv', 'venv'}
+EXCLUDED_WORKSPACE_SUFFIXES = {'.pyc', '.pyo', '.tmp'}
 
 
 def relative(path: Path) -> str:
@@ -67,32 +69,25 @@ def resolve_logs_root(value: str | Path | None = None) -> Path:
 
 
 def session_log_dir(logs_root: Path, session_id: str) -> Path:
-    return logs_root / session_id
+    if not SESSION_ID_PATTERN.fullmatch(session_id):
+        raise ValueError(
+            'Session ID must use 1-64 letters, digits, underscores, or hyphens, '
+            'and must begin with a letter or digit.'
+        )
+
+    resolved_root = logs_root.resolve()
+    resolved_log_dir = (resolved_root / session_id).resolve()
+    if resolved_log_dir.parent != resolved_root:
+        raise ValueError(f'Invalid session log directory: {resolved_log_dir}')
+    return resolved_log_dir
 
 
 def assert_new_session(log_dir: Path) -> None:
-    events_path = log_dir / 'events.jsonl'
-    if not events_path.exists():
-        return
-
-    session_started = False
-    with events_path.open('r', encoding='utf-8') as handle:
-        for line_number, line in enumerate(handle, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f'Malformed JSONL event at {events_path}:{line_number}') from exc
-            if event.get('event_type') == 'session_start':
-                session_started = True
-                break
-
-    if session_started:
-        raise FileExistsError(f'Session already has an events file: {events_path}')
-
-    shutil.rmtree(log_dir)
+    if log_dir.exists():
+        raise FileExistsError(
+            f'Session log directory already exists: {log_dir}. '
+            'Use a new session ID; existing session evidence is never overwritten.'
+        )
 
 
 def clear_outputs_dir(code_dir: Path) -> Dict[str, Any]:
@@ -191,123 +186,276 @@ def _safe_name(value: str) -> str:
     return re.sub(r'[^A-Za-z0-9_.-]+', '_', value).strip('_') or 'snapshot'
 
 
-class CodeSnapshotter:
+class SessionCheckpointManager:
+    """Create reconstructable workspace checkpoints for one active condition."""
+
     def __init__(
         self,
         code_dir: Path,
         log_dir: Path,
         logger: ResearchLogger,
+        runner: str,
         phase_provider: Callable[[], str | None] | None = None,
     ) -> None:
         self.code_dir = code_dir
-        self.snapshots_dir = log_dir / 'code_snapshots'
+        self.log_dir = log_dir
         self.logger = logger
+        self.runner = runner
         self.phase_provider = phase_provider
-        self._snapshot_index = 0
-        self._change_hashes: Dict[Path, str | None] = {}
-        self._lock = threading.Lock()
+        self.checkpoints_dir = log_dir / 'checkpoints'
+        self.participant_environment_dir = log_dir / 'participant_environment'
+        self._index = 0
+        self._previous_workspace: Dict[str, Dict[str, Any]] = {}
+        self._latest_report: Dict[str, Any] | None = None
+        self._lock = threading.RLock()
 
-    def snapshot(self, relative_path: Path, trigger: str, phase: str | None = None) -> None:
-        source_path = self.code_dir / relative_path
-        event_phase = phase if phase is not None else self._current_phase()
-
-        if not source_path.exists():
-            self.logger.event(
-                'code_snapshot_error',
-                {
-                    'source_path': relative(source_path),
-                    'trigger': trigger,
-                    'phase': event_phase,
-                    'error': 'source_file_missing',
-                },
-            )
-            return
-
-        try:
-            current_hash = sha256_file(source_path)
-        except OSError as exc:
-            self.logger.event(
-                'code_snapshot_error',
-                {
-                    'source_path': relative(source_path),
-                    'trigger': trigger,
-                    'phase': event_phase,
-                    'error': str(exc),
-                },
-            )
-            return
-
-        with self._lock:
-            self._snapshot_index += 1
-            snapshot_index = self._snapshot_index
-            snapshot_name = (
-                f'{snapshot_index:04d}_'
-                f'{_safe_name(relative_path.stem)}_'
-                f'{_safe_name(trigger)}'
-                f'{relative_path.suffix}'
-            )
-            snapshot_path = self.snapshots_dir / snapshot_name
-
-        try:
-            self.snapshots_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source_path, snapshot_path)
-        except OSError as exc:
-            self.logger.event(
-                'code_snapshot_error',
-                {
-                    'source_path': relative(source_path),
-                    'trigger': trigger,
-                    'phase': event_phase,
-                    'sha256': current_hash,
-                    'error': str(exc),
-                },
-            )
-            return
-
-        self.logger.event(
-            'code_snapshot',
-            {
-                'snapshot_index': snapshot_index,
-                'source_path': relative(source_path),
-                'snapshot_path': relative(snapshot_path),
-                'trigger': trigger,
-                'phase': event_phase,
-                'sha256': current_hash,
-            },
+    def capture_baseline(
+        self,
+        trigger: str = 'session_baseline',
+        runner_metadata: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        environment = self._copy_participant_environment()
+        return self.capture(
+            checkpoint_type='baseline',
+            trigger=trigger,
+            participant_environment=environment,
+            runner_metadata=runner_metadata,
         )
 
-    def prepare_change_tracking(self, relative_path: Path) -> None:
-        source_path = self.code_dir / relative_path
-        try:
-            baseline_hash = sha256_file(source_path) if source_path.exists() else None
-        except OSError:
-            baseline_hash = None
+    def capture_report_created(self, report: Dict[str, Any]) -> Dict[str, Any]:
         with self._lock:
-            self._change_hashes[relative_path] = baseline_hash
-
-    def snapshot_if_changed(self, relative_path: Path, trigger: str) -> None:
-        source_path = self.code_dir / relative_path
-        try:
-            current_hash = sha256_file(source_path) if source_path.exists() else None
-        except OSError as exc:
-            self.logger.event(
-                'code_snapshot_error',
-                {
-                    'source_path': relative(source_path),
-                    'trigger': trigger,
-                    'phase': self._current_phase(),
-                    'error': str(exc),
-                },
+            self._latest_report = {
+                'snapshot_id': report['snapshot_id'],
+                'snapshot_path': report['snapshot_path'],
+                'sha256': report['sha256'],
+            }
+            return self._capture(
+                checkpoint_type='report_created',
+                trigger='report_snapshot',
+                include_report_py=True,
             )
-            return
 
+    def capture(self, checkpoint_type: str, trigger: str, include_report_py: bool = False,
+                participant_environment: Dict[str, Any] | None = None,
+                runner_metadata: Dict[str, Any] | None = None,
+                phase: str | None = None) -> Dict[str, Any]:
         with self._lock:
-            previous_hash = self._change_hashes.get(relative_path)
-            if current_hash == previous_hash:
-                return
-            self._change_hashes[relative_path] = current_hash
+            return self._capture(
+                checkpoint_type=checkpoint_type,
+                trigger=trigger,
+                include_report_py=include_report_py,
+                participant_environment=participant_environment,
+                runner_metadata=runner_metadata,
+                phase=phase,
+            )
 
-        self.snapshot(relative_path, trigger)
+    def _capture(self, checkpoint_type: str, trigger: str, include_report_py: bool = False,
+                 participant_environment: Dict[str, Any] | None = None,
+                 runner_metadata: Dict[str, Any] | None = None,
+                 phase: str | None = None) -> Dict[str, Any]:
+        event_phase = phase if phase is not None else self._current_phase()
+        workspace = self._workspace_state()
+        changes = self._workspace_changes(workspace)
+        self._index += 1
+        checkpoint_id = f'{self._index:04d}_{checkpoint_type}'
+        checkpoint_dir = self.checkpoints_dir / checkpoint_id
+        changed_files_dir = checkpoint_dir / 'changed_files'
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        write_json(checkpoint_dir / 'workspace_manifest.json', {
+            'schema_version': 'workspace_manifest.v1',
+            'checkpoint_id': checkpoint_id,
+            'files': [workspace[path] for path in sorted(workspace)],
+        })
+
+        copied_changes = self._copy_changed_files(changes, changed_files_dir)
+        git_artifacts = self._write_git_artifacts(checkpoint_dir)
+        report_reference = self._write_report_reference(checkpoint_dir)
+        report_py = self._copy_report_py(checkpoint_dir) if include_report_py else None
+        git_metadata = self._git_metadata()
+
+        manifest: Dict[str, Any] = {
+            'schema_version': 'checkpoint.v1',
+            'checkpoint_id': checkpoint_id,
+            'checkpoint_type': checkpoint_type,
+            'trigger': trigger,
+            'timestamp_utc': utc_now_iso(),
+            'elapsed_ms': self.logger.elapsed_ms(),
+            'phase': event_phase,
+            'condition': self.logger.condition,
+            'runner': self.runner,
+            'code_dir': relative(self.code_dir),
+            'git': git_metadata,
+            'workspace_manifest_path': relative(checkpoint_dir / 'workspace_manifest.json'),
+            'changed_files': copied_changes,
+            'latest_report': report_reference,
+            'git_artifacts': git_artifacts,
+        }
+        if report_py is not None:
+            manifest['report_py'] = report_py
+        if participant_environment is not None:
+            manifest['participant_environment'] = participant_environment
+        if runner_metadata is not None:
+            manifest['runner_metadata'] = runner_metadata
+
+        manifest_path = checkpoint_dir / 'manifest.json'
+        write_json(manifest_path, manifest)
+        self._previous_workspace = workspace
+
+        event_data = {
+            'checkpoint_id': checkpoint_id,
+            'checkpoint_type': checkpoint_type,
+            'trigger': trigger,
+            'phase': event_phase,
+            'manifest_path': relative(manifest_path),
+            'manifest_sha256': sha256_file(manifest_path),
+            'changed_file_count': len(changes),
+            'latest_report_snapshot_id': report_reference.get('snapshot_id'),
+        }
+        self.logger.event('checkpoint_created', event_data)
+        return {**event_data, 'checkpoint_dir': checkpoint_dir}
+
+    def _workspace_state(self) -> Dict[str, Dict[str, Any]]:
+        workspace: Dict[str, Dict[str, Any]] = {}
+        for path in self.code_dir.rglob('*'):
+            if not path.is_file() or self._is_excluded_workspace_path(path):
+                continue
+            relative_path = path.relative_to(self.code_dir).as_posix()
+            workspace[relative_path] = {
+                'path': relative_path,
+                'sha256': sha256_file(path),
+                'size_bytes': path.stat().st_size,
+            }
+        return workspace
+
+    def _is_excluded_workspace_path(self, path: Path) -> bool:
+        relative_parts = path.relative_to(self.code_dir).parts
+        if any(part in EXCLUDED_WORKSPACE_PARTS for part in relative_parts):
+            return True
+        return path.suffix.lower() in EXCLUDED_WORKSPACE_SUFFIXES
+
+    def _workspace_changes(self, workspace: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        changes: List[Dict[str, Any]] = []
+        previous_paths = set(self._previous_workspace)
+        current_paths = set(workspace)
+
+        for path in sorted(current_paths):
+            current = workspace[path]
+            previous = self._previous_workspace.get(path)
+            if previous is None:
+                changes.append({**current, 'change_type': 'added'})
+            elif previous['sha256'] != current['sha256']:
+                changes.append({**current, 'change_type': 'modified'})
+
+        for path in sorted(previous_paths - current_paths):
+            changes.append({
+                'path': path,
+                'sha256': None,
+                'size_bytes': None,
+                'change_type': 'deleted',
+            })
+        return changes
+
+    def _copy_changed_files(self, changes: List[Dict[str, Any]], destination: Path) -> List[Dict[str, Any]]:
+        copied: List[Dict[str, Any]] = []
+        for change in changes:
+            record = dict(change)
+            if (
+                change['path'] == REPORT_RELATIVE_PATH.as_posix()
+                and self._latest_report is not None
+                and change['change_type'] != 'deleted'
+            ):
+                record['snapshot_path'] = self._latest_report['snapshot_path']
+                record['snapshot_kind'] = 'report_snapshot'
+            elif change['change_type'] != 'deleted':
+                source = self.code_dir / change['path']
+                target = destination / Path(change['path'])
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                record['snapshot_path'] = relative(target)
+            else:
+                record['snapshot_path'] = None
+            copied.append(record)
+        return copied
+
+    def _copy_report_py(self, checkpoint_dir: Path) -> Dict[str, Any]:
+        source = self.code_dir / REPORT_SOURCE_RELATIVE_PATH
+        target = checkpoint_dir / 'report_py.py'
+        if not source.exists():
+            return {'exists': False, 'source_path': relative(source), 'snapshot_path': None, 'sha256': None}
+        shutil.copy2(source, target)
+        return {
+            'exists': True,
+            'source_path': relative(source),
+            'snapshot_path': relative(target),
+            'sha256': sha256_file(target),
+        }
+
+    def _copy_participant_environment(self) -> Dict[str, Any]:
+        files: List[Dict[str, Any]] = []
+        for path in self.code_dir.rglob('*'):
+            if not path.is_file() or self._is_excluded_workspace_path(path):
+                continue
+            relative_path = path.relative_to(self.code_dir)
+            if relative_path.parts and relative_path.parts[0] == 'outputs':
+                continue
+            target = self.participant_environment_dir / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            files.append({
+                'path': relative_path.as_posix(),
+                'snapshot_path': relative(target),
+                'sha256': sha256_file(target),
+            })
+
+        manifest_path = self.participant_environment_dir / 'manifest.json'
+        write_json(manifest_path, {
+            'schema_version': 'participant_environment.v1',
+            'code_dir': relative(self.code_dir),
+            'files': sorted(files, key=lambda item: item['path']),
+        })
+        return {
+            'path': relative(self.participant_environment_dir),
+            'manifest_path': relative(manifest_path),
+            'manifest_sha256': sha256_file(manifest_path),
+            'file_count': len(files),
+        }
+
+    def _write_git_artifacts(self, checkpoint_dir: Path) -> Dict[str, str]:
+        code_path = str(_resettable_code_dir_relative_path(self.code_dir))
+        commands = {
+            'git_status.txt': ['status', '--porcelain=v1', '--untracked-files=all', '--', code_path],
+            'git_diff.patch': ['diff', '--binary', 'HEAD', '--', code_path],
+            'changed_tracked_files.txt': ['diff', '--name-only', 'HEAD', '--', code_path],
+            'untracked_files.txt': ['ls-files', '--others', '--exclude-standard', '--', code_path],
+        }
+        artifacts: Dict[str, str] = {}
+        for filename, args in commands.items():
+            result = _run_git(args)
+            if result.returncode != 0:
+                raise RuntimeError(f'Could not create {filename}: {tail_text(result.stderr or result.stdout)}')
+            path = checkpoint_dir / filename
+            path.write_text(result.stdout or '', encoding='utf-8')
+            artifacts[filename.removesuffix('.txt').removesuffix('.patch')] = relative(path)
+        return artifacts
+
+    def _write_report_reference(self, checkpoint_dir: Path) -> Dict[str, Any]:
+        reference = self._latest_report or {
+            'snapshot_id': None,
+            'snapshot_path': None,
+            'sha256': None,
+        }
+        path = checkpoint_dir / 'latest_report_reference.json'
+        write_json(path, reference)
+        return {**reference, 'reference_path': relative(path)}
+
+    def _git_metadata(self) -> Dict[str, str | None]:
+        branch = _run_git(['branch', '--show-current'])
+        commit = _run_git(['rev-parse', 'HEAD'])
+        if branch.returncode != 0 or commit.returncode != 0:
+            raise RuntimeError('Could not determine Git branch and commit for checkpoint')
+        branch_name = (branch.stdout or '').strip() or None
+        return {'branch': branch_name, 'head_commit': (commit.stdout or '').strip()}
 
     def _current_phase(self) -> str | None:
         if self.phase_provider is None:
@@ -323,7 +471,7 @@ class ReportWatcher:
         logger: ResearchLogger,
         poll_interval_sec: float,
         phase_provider: Callable[[], str | None] | None = None,
-        code_snapshotter: CodeSnapshotter | None = None,
+        checkpoint_manager: SessionCheckpointManager | None = None,
     ) -> None:
         self.code_dir = code_dir
         self.report_path = code_dir / REPORT_RELATIVE_PATH
@@ -331,7 +479,7 @@ class ReportWatcher:
         self.logger = logger
         self.poll_interval_sec = poll_interval_sec
         self.phase_provider = phase_provider
-        self.code_snapshotter = code_snapshotter
+        self.checkpoint_manager = checkpoint_manager
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, name='report-watcher', daemon=True)
         self._last_hash: str | None = None
@@ -339,15 +487,11 @@ class ReportWatcher:
 
     def start(self) -> None:
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
-        if self.code_snapshotter is not None:
-            self.code_snapshotter.prepare_change_tracking(DATA_LOADER_RELATIVE_PATH)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop_event.set()
         self._thread.join(timeout=max(self.poll_interval_sec * 2, 2.0))
-        if self.code_snapshotter is not None:
-            self.code_snapshotter.snapshot_if_changed(DATA_LOADER_RELATIVE_PATH, 'data_loader_changed')
 
     def check_once(self) -> None:
         if not self.report_path.exists():
@@ -388,17 +532,34 @@ class ReportWatcher:
             )
             return
 
+        report_reference = {
+            'snapshot_id': f'report_{self._snapshot_index:04d}',
+            'snapshot_path': relative(snapshot_path),
+            'sha256': current_hash,
+        }
+        checkpoint = None
+        if self.checkpoint_manager is not None:
+            try:
+                checkpoint = self.checkpoint_manager.capture_report_created(report_reference)
+            except Exception as exc:
+                self.logger.event('checkpoint_error', {
+                    'checkpoint_type': 'report_created',
+                    'phase': self._current_phase(),
+                    'report_snapshot_id': report_reference['snapshot_id'],
+                    'error': str(exc),
+                })
+
         analysis.update(
             {
                 'snapshot_index': self._snapshot_index,
                 'source_path': relative(self.report_path),
                 'snapshot_path': relative(snapshot_path),
                 'phase': self._current_phase(),
+                'checkpoint_id': checkpoint['checkpoint_id'] if checkpoint else None,
+                'checkpoint_manifest_path': checkpoint['manifest_path'] if checkpoint else None,
             }
         )
         self.logger.event('report_snapshot', analysis)
-        if self.code_snapshotter is not None:
-            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'report_snapshot')
 
     def _current_phase(self) -> str | None:
         if self.phase_provider is None:
@@ -407,8 +568,6 @@ class ReportWatcher:
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
-            if self.code_snapshotter is not None:
-                self.code_snapshotter.snapshot_if_changed(DATA_LOADER_RELATIVE_PATH, 'data_loader_changed')
             self.check_once()
             self._stop_event.wait(self.poll_interval_sec)
 
@@ -442,6 +601,13 @@ def run_command(
         )
 
     duration_ms = int(round((time.monotonic() - started) * 1000))
+    command_dir = logger.log_dir / 'command_output'
+    command_dir.mkdir(parents=True, exist_ok=True)
+    command_stem = f'{_safe_name(label)}_{started_ms:010d}'
+    stdout_path = command_dir / f'{command_stem}.stdout.txt'
+    stderr_path = command_dir / f'{command_stem}.stderr.txt'
+    stdout_path.write_text(result.stdout or '', encoding='utf-8')
+    stderr_path.write_text(result.stderr or '', encoding='utf-8')
     logger.event(
         'command_run',
         {
@@ -452,6 +618,12 @@ def run_command(
             'duration_ms': duration_ms,
             'exit_code': result.returncode,
             'timed_out': timed_out,
+            'artifacts': {
+                'stdout_path': relative(stdout_path),
+                'stdout_sha256': sha256_file(stdout_path),
+                'stderr_path': relative(stderr_path),
+                'stderr_sha256': sha256_file(stderr_path),
+            },
             'diagnostics': {
                 'stdout_tail': tail_text(result.stdout or ''),
                 'stderr_tail': tail_text(result.stderr or ''),
@@ -521,10 +693,15 @@ def run_public_tests(
     )
 
 
-def session_start_data(session_id: str, condition: str, code_dir: Path) -> Dict[str, Any]:
+def session_start_data(session_id: str, condition: str, code_dir: Path, runner: str) -> Dict[str, Any]:
     dataset_path = code_dir / DATA_RELATIVE_PATH
     if not dataset_path.exists():
         raise FileNotFoundError(f'Missing dataset: {dataset_path}')
+
+    branch = _run_git(['branch', '--show-current'])
+    commit = _run_git(['rev-parse', 'HEAD'])
+    if branch.returncode != 0 or commit.returncode != 0:
+        raise RuntimeError('Could not determine Git branch and commit at session start')
 
     return {
         'session_id': session_id,
@@ -532,6 +709,9 @@ def session_start_data(session_id: str, condition: str, code_dir: Path) -> Dict[
         'code_dir': relative(code_dir),
         'dataset_path': relative(dataset_path),
         'dataset_sha256': sha256_file(dataset_path),
+        'runner': runner,
+        'git_branch': (branch.stdout or '').strip() or None,
+        'head_commit': (commit.stdout or '').strip(),
         'python_version': platform.python_version(),
         'platform': platform.platform(),
     }

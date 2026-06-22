@@ -32,10 +32,9 @@ if str(LOGGING_DIR) not in sys.path:
     sys.path.insert(0, str(LOGGING_DIR))
 
 from pilot_observer import (  # noqa: E402
-    REPORT_SOURCE_RELATIVE_PATH,
-    CodeSnapshotter,
     KNOWN_CONDITIONS,
     ReportWatcher,
+    SessionCheckpointManager,
     assert_new_session,
     clear_outputs_dir,
     code_dir_for_condition,
@@ -47,6 +46,7 @@ from pilot_observer import (  # noqa: E402
     session_start_data,
 )
 from research_logger import ResearchLogger  # noqa: E402
+from report_checks import sha256_file  # noqa: E402
 from summarise_session import summarize_log_dir  # noqa: E402
 
 
@@ -68,7 +68,7 @@ ERROR = '#ffb4a9'
 class PilotUI:
     def __init__(self) -> None:
         self.root = tk.Tk()
-        self.root.title('Focus Session')
+        self.root.title('Task Session')
         self.root.geometry('300x360')
         self.root.minsize(280, 330)
         self.root.configure(bg=BG)
@@ -83,7 +83,7 @@ class PilotUI:
 
         self.logger: ResearchLogger | None = None
         self.watcher: ReportWatcher | None = None
-        self.code_snapshotter: CodeSnapshotter | None = None
+        self.checkpoint_manager: SessionCheckpointManager | None = None
         self.session_log_dir: Path | None = None
         self.code_dir: Path | None = None
         self.current_phase: str | None = None
@@ -177,7 +177,7 @@ class PilotUI:
 
     def _show_ready(self) -> None:
         self._clear()
-        self.root.title('Focus Session')
+        self.root.title('Task Session')
         panel = self._panel()
         self._label(panel, 'Ready to begin', 17, TEXT).pack(pady=(44, 10))
         self._label(panel, 'Press Start when you are ready.', 10, MUTED).pack(pady=(0, 30))
@@ -195,18 +195,24 @@ class PilotUI:
             self.logger = ResearchLogger(self.session_log_dir, session_id, condition)
             self.logger.event('code_dir_reset', reset_code_dir_to_head(self.code_dir))
             self.logger.event('outputs_cleared', clear_outputs_dir(self.code_dir))
-            self.logger.event('session_start', session_start_data(session_id, condition, self.code_dir))
+            self.logger.event('session_start', session_start_data(session_id, condition, self.code_dir, runner='ui'))
             self.logger.event('participant_start_clicked', {})
-            self.current_phase = 'task_phase'
-            self.logger.event('task_phase_start', {'duration_sec': TASK_PHASE_SECONDS})
-            self.code_snapshotter = CodeSnapshotter(
+            self.checkpoint_manager = SessionCheckpointManager(
                 self.code_dir,
                 self.session_log_dir,
                 self.logger,
+                runner='ui',
                 phase_provider=lambda: self.current_phase,
             )
-            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_baseline')
+            self.checkpoint_manager.capture_baseline(runner_metadata={
+                'script_path': 'Research-Only/run_pilot_ui.py',
+                'script_sha256': sha256_file(Path(__file__)),
+                'task_phase_seconds': TASK_PHASE_SECONDS,
+                'review_phase_seconds': REVIEW_PHASE_SECONDS,
+            })
             self.logger.event('ui_ready', {'always_on_top': True})
+            self.current_phase = 'task_phase'
+            self.logger.event('task_phase_start', {'duration_sec': TASK_PHASE_SECONDS})
 
             self.watcher = ReportWatcher(
                 self.code_dir,
@@ -214,7 +220,7 @@ class PilotUI:
                 self.logger,
                 POLL_INTERVAL_SECONDS,
                 phase_provider=lambda: self.current_phase,
-                code_snapshotter=self.code_snapshotter,
+                checkpoint_manager=self.checkpoint_manager,
             )
             self.watcher.start()
         except Exception as exc:
@@ -323,9 +329,12 @@ class PilotUI:
 
         if self.logger is not None and clicked:
             self.logger.event('task_done_clicked', {'phase': 'task_phase'})
-        if self.code_snapshotter is not None:
-            snapshot_trigger = 'code_snapshot_task_done' if clicked else 'code_snapshot_task_end'
-            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, snapshot_trigger)
+        if self.checkpoint_manager is not None:
+            self.checkpoint_manager.capture(
+                checkpoint_type='task_end',
+                trigger=reason,
+                phase='task_phase',
+            )
         if self.logger is not None:
             self.logger.event('task_phase_end', {'reason': reason})
 
@@ -344,12 +353,16 @@ class PilotUI:
 
         if self.logger is not None:
             self.logger.event('review_phase_end', {'reason': 'timer_elapsed'})
-        if self.code_snapshotter is not None:
-            self.code_snapshotter.snapshot(REPORT_SOURCE_RELATIVE_PATH, 'code_snapshot_review_end')
-
         if self.watcher is not None:
             self.watcher.stop()
             self.watcher.check_once()
+
+        if self.checkpoint_manager is not None:
+            self.checkpoint_manager.capture(
+                checkpoint_type='review_end_handin',
+                trigger='review_timer_elapsed',
+                phase='review_phase',
+            )
 
         if self.logger is not None:
             self.logger.event('submission_done', {'source': 'review_timer_elapsed'})

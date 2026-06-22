@@ -28,6 +28,7 @@ class ResearchLogger:
         self.session_id = session_id
         self.condition = condition
         self._start_monotonic = time.monotonic()
+        self._event_sequence = 0
         self._lock = threading.Lock()
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -35,16 +36,19 @@ class ResearchLogger:
         return int(round((time.monotonic() - self._start_monotonic) * 1000))
 
     def event(self, event_type: str, data: Dict[str, Any] | None = None) -> Dict[str, Any]:
-        record = {
-            'schema_version': 'event.v2',
-            'session_id': self.session_id,
-            'condition': self.condition,
-            'event_type': event_type,
-            'timestamp_utc': utc_now_iso(),
-            'elapsed_ms': self.elapsed_ms(),
-            'data': data or {},
-        }
         with self._lock:
+            self._event_sequence += 1
+            sequence = self._event_sequence
+            record = {
+                'schema_version': 'event.v3',
+                'event_sequence': sequence,
+                'session_id': self.session_id,
+                'condition': self.condition,
+                'event_type': event_type,
+                'timestamp_utc': utc_now_iso(),
+                'elapsed_ms': self.elapsed_ms(),
+                'data': data or {},
+            }
             with self.events_path.open('a', encoding='utf-8') as handle:
                 handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + '\n')
         return record
