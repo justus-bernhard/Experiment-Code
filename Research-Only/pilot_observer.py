@@ -20,12 +20,11 @@ if str(LOGGING_DIR) not in sys.path:
     sys.path.insert(0, str(LOGGING_DIR))
 
 from report_checks import analyze_report, sha256_file  # noqa: E402
-from research_logger import ResearchLogger, tail_text, utc_now_iso, write_json  # noqa: E402
+from research_logger import ResearchLogger, tail_text  # noqa: E402
 
 
 DATA_RELATIVE_PATH = Path('data') / 'product_family_planning_dataset.csv'
 REPORT_RELATIVE_PATH = Path('outputs') / 'report.json'
-REPORT_SOURCE_RELATIVE_PATH = Path('src') / 'report.py'
 HIDDEN_VERIFIER_PATH = RESEARCH_DIR / 'research_verify.py'
 
 KNOWN_CONDITIONS = {
@@ -182,12 +181,8 @@ def reset_code_dir_to_head(code_dir: Path) -> Dict[str, Any]:
     }
 
 
-def _safe_name(value: str) -> str:
-    return re.sub(r'[^A-Za-z0-9_.-]+', '_', value).strip('_') or 'snapshot'
-
-
 class SessionCheckpointManager:
-    """Create reconstructable workspace checkpoints for one active condition."""
+    """Store the small set of participant-work artifacts needed for review."""
 
     def __init__(
         self,
@@ -202,118 +197,129 @@ class SessionCheckpointManager:
         self.logger = logger
         self.runner = runner
         self.phase_provider = phase_provider
-        self.checkpoints_dir = log_dir / 'checkpoints'
-        self.participant_environment_dir = log_dir / 'participant_environment'
-        self._index = 0
-        self._previous_workspace: Dict[str, Dict[str, Any]] = {}
-        self._latest_report: Dict[str, Any] | None = None
+        self.baseline_dir = log_dir / 'baseline'
+        self.milestones_dir = log_dir / 'milestones'
+        self.reports_dir = log_dir / 'reports'
+        self._baseline_workspace: Dict[str, Dict[str, Any]] = {}
+        self._task_end_workspace: Dict[str, Dict[str, Any]] | None = None
+        self._previous_report_workspace: Dict[str, Dict[str, Any]] = {}
+        self._report_index = 0
         self._lock = threading.RLock()
 
     def capture_baseline(
         self,
         trigger: str = 'session_baseline',
-        runner_metadata: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
-        environment = self._copy_participant_environment()
-        return self.capture(
-            checkpoint_type='baseline',
-            trigger=trigger,
-            participant_environment=environment,
-            runner_metadata=runner_metadata,
-        )
-
-    def capture_report_created(self, report: Dict[str, Any]) -> Dict[str, Any]:
         with self._lock:
-            self._latest_report = {
-                'snapshot_id': report['snapshot_id'],
-                'snapshot_path': report['snapshot_path'],
-                'sha256': report['sha256'],
+            if self._baseline_workspace:
+                raise RuntimeError('Baseline has already been captured for this session')
+
+            workspace = self._workspace_state()
+            starter_workspace_dir = self.baseline_dir / 'starter_workspace'
+            self._copy_workspace(workspace, starter_workspace_dir)
+            self._write_reference(
+                self.baseline_dir,
+                'Starting environment after reset to committed HEAD.',
+            )
+            self._write_git_artifacts(self.baseline_dir)
+            self._baseline_workspace = workspace
+            self._previous_report_workspace = workspace
+
+            event_data = {
+                'capture_id': 'baseline',
+                'capture_type': 'baseline',
+                'trigger': trigger,
+                'phase': None,
+                'capture_path': relative(self.baseline_dir),
+                'changed_file_count': 0,
             }
-            return self._capture(
-                checkpoint_type='report_created',
-                trigger='report_snapshot',
-                include_report_py=True,
-            )
+            self.logger.event('checkpoint_created', event_data)
+            return event_data
 
-    def capture(self, checkpoint_type: str, trigger: str, include_report_py: bool = False,
-                participant_environment: Dict[str, Any] | None = None,
-                runner_metadata: Dict[str, Any] | None = None,
-                phase: str | None = None) -> Dict[str, Any]:
+    def capture_report_created(self, source_report: Path, phase: str | None) -> Dict[str, Any]:
         with self._lock:
-            return self._capture(
-                checkpoint_type=checkpoint_type,
-                trigger=trigger,
-                include_report_py=include_report_py,
-                participant_environment=participant_environment,
-                runner_metadata=runner_metadata,
-                phase=phase,
+            if not self._baseline_workspace:
+                raise RuntimeError('Cannot capture a report before the baseline')
+            if not source_report.is_file():
+                raise FileNotFoundError(f'Report does not exist: {source_report}')
+
+            self._report_index += 1
+            stage = self._stage_name(phase)
+            capture_id = f'{self._report_index:04d}_{stage}'
+            capture_dir = self.reports_dir / capture_id
+            report_path = capture_dir / 'report.json'
+            capture_dir.mkdir(parents=True, exist_ok=False)
+            shutil.copy2(source_report, report_path)
+
+            workspace = self._workspace_state()
+            changes = self._workspace_changes(workspace, self._previous_report_workspace)
+            self._copy_changed_files(changes, capture_dir / 'changed_files')
+            reference = (
+                'baseline' if self._report_index == 1
+                else f'report {self._report_index - 1:04d}'
             )
+            self._write_reference(capture_dir, f'Changed files compared with: {reference}.', changes)
+            self._write_git_artifacts(capture_dir)
+            self._previous_report_workspace = workspace
 
-    def _capture(self, checkpoint_type: str, trigger: str, include_report_py: bool = False,
-                 participant_environment: Dict[str, Any] | None = None,
-                 runner_metadata: Dict[str, Any] | None = None,
-                 phase: str | None = None) -> Dict[str, Any]:
-        event_phase = phase if phase is not None else self._current_phase()
-        workspace = self._workspace_state()
-        changes = self._workspace_changes(workspace)
-        self._index += 1
-        checkpoint_id = f'{self._index:04d}_{checkpoint_type}'
-        checkpoint_dir = self.checkpoints_dir / checkpoint_id
-        changed_files_dir = checkpoint_dir / 'changed_files'
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            event_data = {
+                'capture_id': capture_id,
+                'capture_type': 'report',
+                'trigger': 'report_created',
+                'phase': phase,
+                'capture_path': relative(capture_dir),
+                'report_path': relative(report_path),
+                'report_sha256': sha256_file(report_path),
+                'changed_file_count': len(changes),
+                'changed_paths': self._change_paths(changes),
+            }
+            self.logger.event('checkpoint_created', event_data)
+            return event_data
 
-        write_json(checkpoint_dir / 'workspace_manifest.json', {
-            'schema_version': 'workspace_manifest.v1',
-            'checkpoint_id': checkpoint_id,
-            'files': [workspace[path] for path in sorted(workspace)],
-        })
+    def capture(self, checkpoint_type: str, trigger: str, phase: str | None = None) -> Dict[str, Any]:
+        with self._lock:
+            if not self._baseline_workspace:
+                raise RuntimeError('Cannot capture a milestone before the baseline')
 
-        copied_changes = self._copy_changed_files(changes, changed_files_dir)
-        git_artifacts = self._write_git_artifacts(checkpoint_dir)
-        report_reference = self._write_report_reference(checkpoint_dir)
-        report_py = self._copy_report_py(checkpoint_dir) if include_report_py else None
-        git_metadata = self._git_metadata()
+            event_phase = phase if phase is not None else self._current_phase()
+            if checkpoint_type == 'task_end':
+                milestone_name = '0001_task_end'
+                reference_workspace = self._baseline_workspace
+                reference = 'baseline'
+            elif checkpoint_type in {'review_end', 'review_end_handin'}:
+                milestone_name = '0002_review_end'
+                reference_workspace = self._task_end_workspace or self._baseline_workspace
+                reference = 'task end' if self._task_end_workspace is not None else 'baseline'
+            else:
+                raise ValueError(f'Unsupported milestone type: {checkpoint_type}')
 
-        manifest: Dict[str, Any] = {
-            'schema_version': 'checkpoint.v1',
-            'checkpoint_id': checkpoint_id,
-            'checkpoint_type': checkpoint_type,
-            'trigger': trigger,
-            'timestamp_utc': utc_now_iso(),
-            'elapsed_ms': self.logger.elapsed_ms(),
-            'phase': event_phase,
-            'condition': self.logger.condition,
-            'runner': self.runner,
-            'code_dir': relative(self.code_dir),
-            'git': git_metadata,
-            'workspace_manifest_path': relative(checkpoint_dir / 'workspace_manifest.json'),
-            'changed_files': copied_changes,
-            'latest_report': report_reference,
-            'git_artifacts': git_artifacts,
-        }
-        if report_py is not None:
-            manifest['report_py'] = report_py
-        if participant_environment is not None:
-            manifest['participant_environment'] = participant_environment
-        if runner_metadata is not None:
-            manifest['runner_metadata'] = runner_metadata
+            milestone_dir = self.milestones_dir / milestone_name
+            if milestone_dir.exists():
+                raise RuntimeError(f'Milestone has already been captured: {milestone_name}')
+            milestone_dir.mkdir(parents=True)
+            workspace = self._workspace_state()
+            changes = self._workspace_changes(workspace, reference_workspace)
+            self._copy_changed_files(changes, milestone_dir / 'changed_files')
+            self._write_reference(
+                milestone_dir,
+                f'Changed files compared with: {reference}.',
+                changes,
+            )
+            self._write_git_artifacts(milestone_dir)
+            if checkpoint_type == 'task_end':
+                self._task_end_workspace = workspace
 
-        manifest_path = checkpoint_dir / 'manifest.json'
-        write_json(manifest_path, manifest)
-        self._previous_workspace = workspace
-
-        event_data = {
-            'checkpoint_id': checkpoint_id,
-            'checkpoint_type': checkpoint_type,
-            'trigger': trigger,
-            'phase': event_phase,
-            'manifest_path': relative(manifest_path),
-            'manifest_sha256': sha256_file(manifest_path),
-            'changed_file_count': len(changes),
-            'latest_report_snapshot_id': report_reference.get('snapshot_id'),
-        }
-        self.logger.event('checkpoint_created', event_data)
-        return {**event_data, 'checkpoint_dir': checkpoint_dir}
+            event_data = {
+                'capture_id': milestone_name,
+                'capture_type': 'milestone',
+                'trigger': trigger,
+                'phase': event_phase,
+                'capture_path': relative(milestone_dir),
+                'changed_file_count': len(changes),
+                'changed_paths': self._change_paths(changes),
+            }
+            self.logger.event('checkpoint_created', event_data)
+            return event_data
 
     def _workspace_state(self) -> Dict[str, Dict[str, Any]]:
         workspace: Dict[str, Dict[str, Any]] = {}
@@ -321,6 +327,8 @@ class SessionCheckpointManager:
             if not path.is_file() or self._is_excluded_workspace_path(path):
                 continue
             relative_path = path.relative_to(self.code_dir).as_posix()
+            if relative_path == REPORT_RELATIVE_PATH.as_posix():
+                continue
             workspace[relative_path] = {
                 'path': relative_path,
                 'sha256': sha256_file(path),
@@ -334,14 +342,18 @@ class SessionCheckpointManager:
             return True
         return path.suffix.lower() in EXCLUDED_WORKSPACE_SUFFIXES
 
-    def _workspace_changes(self, workspace: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _workspace_changes(
+        self,
+        workspace: Dict[str, Dict[str, Any]],
+        reference_workspace: Dict[str, Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
         changes: List[Dict[str, Any]] = []
-        previous_paths = set(self._previous_workspace)
+        previous_paths = set(reference_workspace)
         current_paths = set(workspace)
 
         for path in sorted(current_paths):
             current = workspace[path]
-            previous = self._previous_workspace.get(path)
+            previous = reference_workspace.get(path)
             if previous is None:
                 changes.append({**current, 'change_type': 'added'})
             elif previous['sha256'] != current['sha256']:
@@ -356,98 +368,67 @@ class SessionCheckpointManager:
             })
         return changes
 
-    def _copy_changed_files(self, changes: List[Dict[str, Any]], destination: Path) -> List[Dict[str, Any]]:
-        copied: List[Dict[str, Any]] = []
+    def _copy_workspace(self, workspace: Dict[str, Dict[str, Any]], destination: Path) -> None:
+        for relative_path in sorted(workspace):
+            source = self.code_dir / relative_path
+            target = destination / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+    def _copy_changed_files(self, changes: List[Dict[str, Any]], destination: Path) -> None:
         for change in changes:
-            record = dict(change)
-            if (
-                change['path'] == REPORT_RELATIVE_PATH.as_posix()
-                and self._latest_report is not None
-                and change['change_type'] != 'deleted'
-            ):
-                record['snapshot_path'] = self._latest_report['snapshot_path']
-                record['snapshot_kind'] = 'report_snapshot'
-            elif change['change_type'] != 'deleted':
+            if change['change_type'] != 'deleted':
                 source = self.code_dir / change['path']
                 target = destination / Path(change['path'])
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
-                record['snapshot_path'] = relative(target)
-            else:
-                record['snapshot_path'] = None
-            copied.append(record)
-        return copied
 
-    def _copy_report_py(self, checkpoint_dir: Path) -> Dict[str, Any]:
-        source = self.code_dir / REPORT_SOURCE_RELATIVE_PATH
-        target = checkpoint_dir / 'report_py.py'
-        if not source.exists():
-            return {'exists': False, 'source_path': relative(source), 'snapshot_path': None, 'sha256': None}
-        shutil.copy2(source, target)
-        return {
-            'exists': True,
-            'source_path': relative(source),
-            'snapshot_path': relative(target),
-            'sha256': sha256_file(target),
-        }
+    def _write_reference(
+        self,
+        capture_dir: Path,
+        text: str,
+        changes: List[Dict[str, Any]] | None = None,
+    ) -> None:
+        lines = [text]
+        deleted_paths = [change['path'] for change in changes or [] if change['change_type'] == 'deleted']
+        if deleted_paths:
+            lines.extend(['', 'Deleted files:'])
+            lines.extend(f'- {path}' for path in deleted_paths)
+        (capture_dir / 'reference.txt').write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
-    def _copy_participant_environment(self) -> Dict[str, Any]:
-        files: List[Dict[str, Any]] = []
-        for path in self.code_dir.rglob('*'):
-            if not path.is_file() or self._is_excluded_workspace_path(path):
-                continue
-            relative_path = path.relative_to(self.code_dir)
-            if relative_path.parts and relative_path.parts[0] == 'outputs':
-                continue
-            target = self.participant_environment_dir / relative_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, target)
-            files.append({
-                'path': relative_path.as_posix(),
-                'snapshot_path': relative(target),
-                'sha256': sha256_file(target),
-            })
-
-        manifest_path = self.participant_environment_dir / 'manifest.json'
-        write_json(manifest_path, {
-            'schema_version': 'participant_environment.v1',
-            'code_dir': relative(self.code_dir),
-            'files': sorted(files, key=lambda item: item['path']),
-        })
-        return {
-            'path': relative(self.participant_environment_dir),
-            'manifest_path': relative(manifest_path),
-            'manifest_sha256': sha256_file(manifest_path),
-            'file_count': len(files),
-        }
-
-    def _write_git_artifacts(self, checkpoint_dir: Path) -> Dict[str, str]:
+    def _write_git_artifacts(self, capture_dir: Path) -> None:
         code_path = str(_resettable_code_dir_relative_path(self.code_dir))
         commands = {
-            'git_status.txt': ['status', '--porcelain=v1', '--untracked-files=all', '--', code_path],
-            'git_diff.patch': ['diff', '--binary', 'HEAD', '--', code_path],
-            'changed_tracked_files.txt': ['diff', '--name-only', 'HEAD', '--', code_path],
-            'untracked_files.txt': ['ls-files', '--others', '--exclude-standard', '--', code_path],
+            'status.txt': ['status', '--porcelain=v1', '--untracked-files=all', '--', code_path],
+            'diff.patch': ['diff', '--binary', 'HEAD', '--', code_path],
         }
-        artifacts: Dict[str, str] = {}
+        git_dir = capture_dir / 'git'
+        git_dir.mkdir(parents=True, exist_ok=True)
         for filename, args in commands.items():
             result = _run_git(args)
             if result.returncode != 0:
                 raise RuntimeError(f'Could not create {filename}: {tail_text(result.stderr or result.stdout)}')
-            path = checkpoint_dir / filename
+            path = git_dir / filename
             path.write_text(result.stdout or '', encoding='utf-8')
-            artifacts[filename.removesuffix('.txt').removesuffix('.patch')] = relative(path)
-        return artifacts
+        metadata = self._git_metadata()
+        (git_dir / 'revision.txt').write_text(
+            f"branch: {metadata['branch'] or '(detached)'}\nhead: {metadata['head_commit']}\n",
+            encoding='utf-8',
+        )
 
-    def _write_report_reference(self, checkpoint_dir: Path) -> Dict[str, Any]:
-        reference = self._latest_report or {
-            'snapshot_id': None,
-            'snapshot_path': None,
-            'sha256': None,
-        }
-        path = checkpoint_dir / 'latest_report_reference.json'
-        write_json(path, reference)
-        return {**reference, 'reference_path': relative(path)}
+    @staticmethod
+    def _change_paths(changes: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+        return [
+            {'path': change['path'], 'change_type': change['change_type']}
+            for change in changes
+        ]
+
+    @staticmethod
+    def _stage_name(phase: str | None) -> str:
+        return {
+            'task_phase': 'task',
+            'review_phase': 'review',
+        }.get(phase, 'unknown')
 
     def _git_metadata(self) -> Dict[str, str | None]:
         branch = _run_git(['branch', '--show-current'])
@@ -475,7 +456,6 @@ class ReportWatcher:
     ) -> None:
         self.code_dir = code_dir
         self.report_path = code_dir / REPORT_RELATIVE_PATH
-        self.snapshots_dir = log_dir / 'report_snapshots'
         self.logger = logger
         self.poll_interval_sec = poll_interval_sec
         self.phase_provider = phase_provider
@@ -486,7 +466,6 @@ class ReportWatcher:
         self._snapshot_index = 0
 
     def start(self) -> None:
-        self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -515,48 +494,38 @@ class ReportWatcher:
 
         self._last_hash = current_hash
         self._snapshot_index += 1
-        snapshot_path = self.snapshots_dir / f'report_{self._snapshot_index:04d}.json'
-
-        try:
-            shutil.copy2(self.report_path, snapshot_path)
-            analysis = analyze_report(snapshot_path)
-        except OSError as exc:
-            self.logger.event(
-                'report_snapshot_error',
-                {
-                    'path': relative(self.report_path),
-                    'error': str(exc),
-                    'sha256': current_hash,
-                    'phase': self._current_phase(),
-                },
-            )
+        phase = self._current_phase()
+        if self.checkpoint_manager is None:
+            self.logger.event('report_snapshot_error', {
+                'path': relative(self.report_path),
+                'error': 'No session capture manager is available.',
+                'sha256': current_hash,
+                'phase': phase,
+            })
             return
 
-        report_reference = {
-            'snapshot_id': f'report_{self._snapshot_index:04d}',
-            'snapshot_path': relative(snapshot_path),
-            'sha256': current_hash,
-        }
-        checkpoint = None
-        if self.checkpoint_manager is not None:
-            try:
-                checkpoint = self.checkpoint_manager.capture_report_created(report_reference)
-            except Exception as exc:
-                self.logger.event('checkpoint_error', {
-                    'checkpoint_type': 'report_created',
-                    'phase': self._current_phase(),
-                    'report_snapshot_id': report_reference['snapshot_id'],
-                    'error': str(exc),
-                })
+        try:
+            capture = self.checkpoint_manager.capture_report_created(self.report_path, phase)
+            snapshot_path = ROOT / capture['report_path']
+            analysis = analyze_report(snapshot_path)
+        except Exception as exc:
+            self.logger.event('checkpoint_error', {
+                'checkpoint_type': 'report_created',
+                'phase': phase,
+                'report_snapshot_index': self._snapshot_index,
+                'error': str(exc),
+            })
+            return
 
         analysis.update(
             {
                 'snapshot_index': self._snapshot_index,
                 'source_path': relative(self.report_path),
-                'snapshot_path': relative(snapshot_path),
-                'phase': self._current_phase(),
-                'checkpoint_id': checkpoint['checkpoint_id'] if checkpoint else None,
-                'checkpoint_manifest_path': checkpoint['manifest_path'] if checkpoint else None,
+                'snapshot_path': capture['report_path'],
+                'phase': phase,
+                'capture_id': capture['capture_id'],
+                'capture_path': capture['capture_path'],
+                'sha256': capture['report_sha256'],
             }
         )
         self.logger.event('report_snapshot', analysis)
@@ -601,13 +570,6 @@ def run_command(
         )
 
     duration_ms = int(round((time.monotonic() - started) * 1000))
-    command_dir = logger.log_dir / 'command_output'
-    command_dir.mkdir(parents=True, exist_ok=True)
-    command_stem = f'{_safe_name(label)}_{started_ms:010d}'
-    stdout_path = command_dir / f'{command_stem}.stdout.txt'
-    stderr_path = command_dir / f'{command_stem}.stderr.txt'
-    stdout_path.write_text(result.stdout or '', encoding='utf-8')
-    stderr_path.write_text(result.stderr or '', encoding='utf-8')
     logger.event(
         'command_run',
         {
@@ -618,12 +580,6 @@ def run_command(
             'duration_ms': duration_ms,
             'exit_code': result.returncode,
             'timed_out': timed_out,
-            'artifacts': {
-                'stdout_path': relative(stdout_path),
-                'stdout_sha256': sha256_file(stdout_path),
-                'stderr_path': relative(stderr_path),
-                'stderr_sha256': sha256_file(stderr_path),
-            },
             'diagnostics': {
                 'stdout_tail': tail_text(result.stdout or ''),
                 'stderr_tail': tail_text(result.stderr or ''),

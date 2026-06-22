@@ -46,7 +46,6 @@ from pilot_observer import (  # noqa: E402
     session_start_data,
 )
 from research_logger import ResearchLogger  # noqa: E402
-from report_checks import sha256_file  # noqa: E402
 from summarise_session import summarize_log_dir  # noqa: E402
 
 
@@ -204,12 +203,7 @@ class PilotUI:
                 runner='ui',
                 phase_provider=lambda: self.current_phase,
             )
-            self.checkpoint_manager.capture_baseline(runner_metadata={
-                'script_path': 'Research-Only/run_pilot_ui.py',
-                'script_sha256': sha256_file(Path(__file__)),
-                'task_phase_seconds': TASK_PHASE_SECONDS,
-                'review_phase_seconds': REVIEW_PHASE_SECONDS,
-            })
+            self.checkpoint_manager.capture_baseline()
             self.logger.event('ui_ready', {'always_on_top': True})
             self.current_phase = 'task_phase'
             self.logger.event('task_phase_start', {'duration_sec': TASK_PHASE_SECONDS})
@@ -359,7 +353,7 @@ class PilotUI:
 
         if self.checkpoint_manager is not None:
             self.checkpoint_manager.capture(
-                checkpoint_type='review_end_handin',
+                checkpoint_type='review_end',
                 trigger='review_timer_elapsed',
                 phase='review_phase',
             )

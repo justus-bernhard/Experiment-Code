@@ -20,13 +20,6 @@ EXPECTED_SEMANTIC_LABELS = {
 }
 
 
-PROCESS_AVAILABILITY_FIELDS = {
-    'dataset_open_logging_available': False,
-    'output_open_logging_available': False,
-    'test_run_process_logging_available': False,
-}
-
-
 def _first(events: List[Dict[str, Any]], event_type: str) -> Dict[str, Any] | None:
     return next((event for event in events if event.get('event_type') == event_type), None)
 
@@ -109,11 +102,6 @@ def _unique_semantic_family_count(data: Dict[str, Any]) -> int | None:
     return len(_semantic_labels([label for label in labels if isinstance(label, str)]))
 
 
-def _product_family_record_count_total(data: Dict[str, Any]) -> int | None:
-    value = data.get('product_family_record_count_total')
-    return value if isinstance(value, int) else None
-
-
 def _display_labels_canonical(data: Dict[str, Any]) -> bool | None:
     if 'display_labels_canonical' in data:
         return data.get('display_labels_canonical')
@@ -147,10 +135,6 @@ def _snapshot_phase(event: Dict[str, Any]) -> str | None:
     return phase if isinstance(phase, str) else None
 
 
-def _snapshot_count_by_phase(events: List[Dict[str, Any]], phase: str) -> int:
-    return sum(1 for event in events if _snapshot_phase(event) == phase)
-
-
 def _intervention_stage(first_semantic: Dict[str, Any] | None) -> str | None:
     if first_semantic is None:
         return 'none'
@@ -165,7 +149,7 @@ def _manual_chat_log(log_dir: Path | None) -> Dict[str, Any]:
         'available': False,
         'path': None,
         'sha256': None,
-        'file_modified_at_utc': None,
+        'export_timestamp_utc': None,
     }
     if log_dir is None:
         return unavailable
@@ -180,7 +164,36 @@ def _manual_chat_log(log_dir: Path | None) -> Dict[str, Any]:
         'available': True,
         'path': 'chat.md',
         'sha256': sha256_file(chat_path),
-        'file_modified_at_utc': modified_at,
+        'export_timestamp_utc': modified_at,
+    }
+
+
+def _report_stage(phase: str | None) -> str:
+    return {
+        'task_phase': 'task',
+        'review_phase': 'review',
+    }.get(phase, 'unknown')
+
+
+def _report_history_entry(event: Dict[str, Any]) -> Dict[str, Any]:
+    data = _event_data(event)
+    labels = data.get('product_family_labels')
+    text_labels = [label for label in labels if isinstance(label, str)] if isinstance(labels, list) else []
+    return {
+        'number': data.get('snapshot_index'),
+        'stage': _report_stage(_snapshot_phase(event)),
+        'created_utc': event.get('timestamp_utc'),
+        'elapsed_sec': _sec(event),
+        'path': data.get('snapshot_path'),
+        'sha256': data.get('sha256'),
+        'valid_json': data.get('valid_json'),
+        'schema_valid': data.get('public_schema_valid'),
+        'labels': text_labels,
+        'reported_group_count': _reported_group_count(data),
+        'semantic_group_count': _unique_semantic_family_count(data),
+        'semantic_pass': _semantic_normalization_pass(data),
+        'canonical_display_pass': _display_labels_canonical(data),
+        'normalization_status': _normalization_status(data),
     }
 
 
@@ -221,18 +234,6 @@ def build_summary(events: List[Dict[str, Any]], log_dir: Path | None = None) -> 
     outputs_cleared_data = _event_data(outputs_cleared)
     code_dir_reset = _last(events, 'code_dir_reset')
     code_dir_reset_data = _event_data(code_dir_reset)
-    ui_ready = _last(events, 'ui_ready')
-    ui_error = _last(events, 'ui_error')
-    ui_close_attempts = [
-        event
-        for event in events
-        if event.get('event_type') == 'ui_close_attempted'
-    ]
-    checkpoint_events = [
-        event
-        for event in events
-        if event.get('event_type') == 'checkpoint_created'
-    ]
     checkpoint_errors = [
         event
         for event in events
@@ -241,29 +242,15 @@ def build_summary(events: List[Dict[str, Any]], log_dir: Path | None = None) -> 
 
     final_semantic_pass = _semantic_normalization_pass(final_report_data) if final_report else None
     manual_chat_log = _manual_chat_log(log_dir)
-    raw_final_labels = final_report_data.get('product_family_labels')
-    final_labels = [label for label in raw_final_labels if isinstance(label, str)] if isinstance(raw_final_labels, list) else []
-    command_events = {
-        _event_data(event).get('label'): _event_data(event)
-        for event in events
-        if event.get('event_type') == 'command_run'
-    }
-    checkpoint_summary = [
-        {
-            'checkpoint_id': _event_data(event).get('checkpoint_id'),
-            'checkpoint_type': _event_data(event).get('checkpoint_type'),
-            'phase': _event_data(event).get('phase'),
-            'manifest_path': _event_data(event).get('manifest_path'),
-            'changed_file_count': _event_data(event).get('changed_file_count'),
-        }
-        for event in checkpoint_events
-    ]
+    report_history = [_report_history_entry(event) for event in report_snapshots]
+    final_report_history = report_history[-1] if report_history else None
 
     summary: Dict[str, Any] = {
-        'schema_version': 'session_summary.v3',
+        'schema_version': 'session_summary.v4',
         'session': {
             'id': start_data.get('session_id'),
             'condition': start_data.get('condition'),
+            'runner': start_data.get('runner'),
             'code_dir': start_data.get('code_dir'),
             'status': _event_data(session_end).get('status'),
             'start_utc': session_start.get('timestamp_utc') if session_start else None,
@@ -282,21 +269,13 @@ def build_summary(events: List[Dict[str, Any]], log_dir: Path | None = None) -> 
             'first_report_sec': _sec(first_report),
             'first_intervention_sec': _sec(first_semantic),
         },
-        'primary_outcome': {
-            'intervention_binary': bool(semantic_snapshots),
+        'reports': report_history,
+        'outcome': {
+            'intervention_detected': bool(semantic_snapshots),
             'intervention_stage': _intervention_stage(first_semantic),
-            'intervention_source': 'first_semantic_pass_report_snapshot',
-        },
-        'report_outcome': {
-            'semantic_pass': final_semantic_pass,
-            'canonical_pass': _display_labels_canonical(final_report_data),
-            'normalization_status': _normalization_status(final_report_data),
-            'reported_group_count': _reported_group_count(final_report_data),
-            'unique_semantic_family_count': _unique_semantic_family_count(final_report_data),
-            'product_family_record_count_total': _product_family_record_count_total(final_report_data),
-            'report_snapshot_count': len(report_snapshots),
-            'task_phase_report_snapshot_count': _snapshot_count_by_phase(report_snapshots, 'task_phase'),
-            'review_phase_report_snapshot_count': _snapshot_count_by_phase(report_snapshots, 'review_phase'),
+            'first_semantic_pass_report': _report_history_entry(first_semantic) if first_semantic else None,
+            'final_report': final_report_history,
+            'final_semantic_pass': final_semantic_pass,
         },
         'tests': {
             'public': {
@@ -308,43 +287,19 @@ def build_summary(events: List[Dict[str, Any]], log_dir: Path | None = None) -> 
                 'total': hidden_total,
             },
         },
-        'provenance': {
-            'runner': start_data.get('runner'),
+        'environment': {
             'branch': start_data.get('git_branch'),
             'head_commit': start_data.get('head_commit'),
             'dataset_sha256': start_data.get('dataset_sha256'),
-            'reset': code_dir_reset_data,
-            'outputs_cleanup': outputs_cleared_data,
+            'reset_source': code_dir_reset_data.get('source'),
+            'outputs_cleared_count': outputs_cleared_data.get('deleted_count'),
         },
         'artifacts': {
-            'final_report_snapshot_path': final_report_data.get('snapshot_path'),
-            'final_report_sha256': final_report_data.get('sha256'),
-            'hidden_verifier_output': command_events.get('hidden_verifier', {}).get('artifacts'),
-            'public_test_output': command_events.get('public_pytest', {}).get('artifacts'),
             'manual_chat_log': manual_chat_log,
         },
-        'audit': {
-            'checkpoints': checkpoint_summary,
+        'logging': {
             'checkpoint_error_count': len(checkpoint_errors),
-        },
-        'process': {
-            **PROCESS_AVAILABILITY_FIELDS,
-            'manual_prompt_log_available': manual_chat_log['available'],
-        },
-        'diagnostics': {
-            'ui': {
-                'always_on_top': _event_data(ui_ready).get('always_on_top'),
-                'ui_close_attempted_count': len(ui_close_attempts),
-                'ui_closed_before_completion': (
-                    _event_data(session_end).get('status') in {'interrupted', 'failed'}
-                    and _last(events, 'ui_closed') is not None
-                ),
-                'error': _event_data(ui_error).get('error') if ui_error else None,
-            },
-            'final_product_family_labels': final_labels,
-            'final_normalized_product_family_labels': sorted(_semantic_labels(final_labels)),
-            'expected_semantic_product_family_labels': sorted(EXPECTED_SEMANTIC_LABELS),
-            'final_semantic_equality': _semantic_labels(final_labels) == EXPECTED_SEMANTIC_LABELS and len(final_labels) == 5,
+            'manual_chat_log_available': manual_chat_log['available'],
         },
     }
     return summary
@@ -353,66 +308,8 @@ def build_summary(events: List[Dict[str, Any]], log_dir: Path | None = None) -> 
 def summarize_log_dir(log_dir: Path) -> Dict[str, Any]:
     events = read_events(log_dir / 'events.jsonl')
     summary = build_summary(events, log_dir)
-    summary['artifacts']['timeline_path'] = 'timeline.md'
-    summary['artifacts']['session_manifest_path'] = 'session_manifest.json'
     write_json(log_dir / 'session_summary.json', summary)
-    _write_timeline(log_dir, events)
-    _write_session_manifest(log_dir)
     return summary
-
-
-def _write_timeline(log_dir: Path, events: List[Dict[str, Any]]) -> None:
-    lines = ['# Session Timeline', '']
-    for event in events:
-        event_type = event.get('event_type')
-        data = _event_data(event)
-        timestamp = event.get('timestamp_utc', 'unknown time')
-        elapsed = event.get('elapsed_ms')
-        prefix = f'- {timestamp} ({elapsed} ms)'
-        if event_type == 'checkpoint_created':
-            lines.append(
-                f"{prefix}: checkpoint `{data.get('checkpoint_id')}` "
-                f"({data.get('checkpoint_type')}, phase={data.get('phase')}, "
-                f"changed files={data.get('changed_file_count')})."
-            )
-        elif event_type == 'report_snapshot':
-            lines.append(
-                f"{prefix}: report snapshot `{data.get('snapshot_path')}` "
-                f"(semantic pass={data.get('semantic_normalization_pass')}, "
-                f"checkpoint={data.get('checkpoint_id')})."
-            )
-        elif event_type in {
-            'session_start', 'task_phase_start', 'task_phase_end', 'review_phase_start',
-            'review_phase_end', 'submission_done', 'session_end', 'public_test_result',
-            'hidden_test_result', 'ui_close_attempted', 'ui_error',
-        }:
-            lines.append(f'{prefix}: `{event_type}`.')
-    (log_dir / 'timeline.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
-
-
-def _write_session_manifest(log_dir: Path) -> None:
-    artifact_paths = {
-        log_dir / 'events.jsonl',
-        log_dir / 'session_summary.json',
-        log_dir / 'chat.md',
-    }
-    artifact_paths.add(log_dir / 'timeline.md')
-    for directory_name in ('checkpoints', 'report_snapshots', 'participant_environment', 'command_output'):
-        directory = log_dir / directory_name
-        if directory.exists():
-            artifact_paths.update(path for path in directory.rglob('*') if path.is_file())
-    artifacts = [
-        {
-            'path': str(path.relative_to(log_dir)).replace('\\', '/'),
-            'sha256': sha256_file(path),
-        }
-        for path in sorted(artifact_paths)
-        if path.exists()
-    ]
-    write_json(log_dir / 'session_manifest.json', {
-        'schema_version': 'session_manifest.v1',
-        'artifacts': artifacts,
-    })
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -40,9 +40,11 @@ Each formal session creates a new folder under `Research-Only/logs/`. Session
 IDs must be unique, pseudonymous identifiers using letters, digits, underscores,
 or hyphens. Existing session folders are never overwritten.
 
-The runner records checkpoints at baseline, each report creation, task end, and
-review-end hand-in. After completion, verify `session_summary.json` and copy the
-entire session folder to the approved encrypted or cloud-backed study storage.
+The runner records the full baseline environment, every generated report, and
+task-end and review-end milestones. Each capture includes its relevant changed
+files and Git status, diff, and revision. After completion, verify
+`session_summary.json` and copy the entire session folder to the approved
+encrypted or cloud-backed study storage.
 
 Copilot prompts and responses are exported manually after each session. Place
 the export at `Research-Only/logs/<session_id>/chat.md`, then regenerate the
@@ -52,5 +54,5 @@ session summary:
 python Research-Only/logging/summarise_session.py "Research-Only/logs/P0001"
 ```
 
-The summary records the `chat.md` path, hash, file modification time, and
-availability. `session_manifest.json` also includes the file hash.
+The summary records the `chat.md` path, hash, export timestamp, and
+availability.

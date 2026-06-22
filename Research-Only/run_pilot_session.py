@@ -37,7 +37,6 @@ from pilot_observer import (  # noqa: E402
     session_log_dir,
 )
 from research_logger import ResearchLogger  # noqa: E402
-from report_checks import sha256_file  # noqa: E402
 from summarise_session import summarize_log_dir  # noqa: E402
 
 
@@ -92,12 +91,7 @@ def main() -> int:
         logger.event('outputs_cleared', clear_outputs_dir(code_dir))
         logger.event('session_start', session_start_data(args.session_id, args.condition, code_dir, runner='terminal'))
         checkpoint_manager = SessionCheckpointManager(code_dir, session_dir, logger, runner='terminal')
-        checkpoint_manager.capture_baseline(runner_metadata={
-            'script_path': 'Research-Only/run_pilot_session.py',
-            'script_sha256': sha256_file(Path(__file__)),
-            'task_phase_seconds': None,
-            'review_phase_seconds': None,
-        })
+        checkpoint_manager.capture_baseline()
 
         watcher = ReportWatcher(
             code_dir,
@@ -117,7 +111,7 @@ def main() -> int:
         watcher.stop()
         watcher.check_once()
         checkpoint_manager.capture(
-            checkpoint_type='review_end_handin',
+            checkpoint_type='review_end',
             trigger='researcher_marked',
             phase=None,
         )

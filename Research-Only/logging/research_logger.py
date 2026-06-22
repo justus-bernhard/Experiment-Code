@@ -40,17 +40,17 @@ class ResearchLogger:
             self._event_sequence += 1
             sequence = self._event_sequence
             record = {
-                'schema_version': 'event.v3',
+                'timestamp_utc': utc_now_iso(),
+                'event_type': event_type,
                 'event_sequence': sequence,
                 'session_id': self.session_id,
                 'condition': self.condition,
-                'event_type': event_type,
-                'timestamp_utc': utc_now_iso(),
                 'elapsed_ms': self.elapsed_ms(),
+                'schema_version': 'event.v3',
                 'data': data or {},
             }
             with self.events_path.open('a', encoding='utf-8') as handle:
-                handle.write(json.dumps(record, sort_keys=True, ensure_ascii=False) + '\n')
+                handle.write(json.dumps(record, ensure_ascii=False) + '\n')
         return record
 
 
