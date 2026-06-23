@@ -28,7 +28,7 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
     # TODO 1: Compute overall stats with calc.compute_overall_stats(df).
     overall: Dict[str, Any] = {}
 
-    # TODO 2: Compute grouped stats by product_family.
+    # TODO 2: Compute grouped stats with calc.compute_group_stats(df).
     groups = None
 
     # TODO 3: Convert grouped rows into by_product_family entries with all
@@ -37,7 +37,6 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
 
     # TODO 4: Build meta section and final report.
     report: Dict[str, Any] = {
-        "total_records": 0,
         "overall": overall,
         "by_product_family": by_product_family,
         "meta": {

@@ -9,7 +9,7 @@ from src import report
 
 DATA_PATH = 'data/product_family_planning_dataset.csv'
 EXPECTED_ROW_COUNT = 500
-REQUIRED_TOP_KEYS = {'total_records', 'overall', 'by_product_family', 'meta'}
+REQUIRED_TOP_KEYS = {'overall', 'by_product_family', 'meta'}
 REQUIRED_OVERALL_KEYS = {
     'total_forecast_demand_units',
     'total_actual_demand_units',
@@ -94,7 +94,6 @@ def test_generate_report_schema_public():
     assert isinstance(r['by_product_family'], list)
     assert isinstance(r['meta'], dict)
     assert {'row_count', 'product_families'}.issubset(set(r['meta'].keys()))
-    assert r['total_records'] == EXPECTED_ROW_COUNT
     assert r['meta']['row_count'] == EXPECTED_ROW_COUNT
 
     for group in r['by_product_family']:

@@ -80,7 +80,6 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
     )
 
     report: Dict[str, Any] = {
-        "total_records": int(len(clean)),
         "overall": overall,
         "by_product_family": by_product_family,
         "meta": {

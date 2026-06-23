@@ -23,7 +23,7 @@ EXPECTED_SEMANTIC_LABELS = {
     'communication modules',
 }
 
-REQUIRED_TOP_KEYS = {'total_records', 'overall', 'by_product_family', 'meta'}
+REQUIRED_TOP_KEYS = {'overall', 'by_product_family', 'meta'}
 REQUIRED_OVERALL_KEYS = {
     'total_forecast_demand_units',
     'total_actual_demand_units',

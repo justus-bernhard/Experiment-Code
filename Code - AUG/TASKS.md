@@ -2,29 +2,18 @@
 ## Task Overview
 In this task, you will create a product-family planning report for a senior operations stakeholder. Your code is not assessed for style or efficiency. The main deliverable is `outputs/report.json`.
 
-## AI Usage
-You may use AI only as an in-line coding assistant.
-
-The AI can help in two ways:
-1) it can review code and suggest fixes, or
-2) it can modify selected code based on a prompt you provide.
-
-You should decide the workflow, run commands yourself, and choose whether to accept or decline any AI suggestions. You remain responsible for the final report.
-
 ## Commands
 Produce report: `python -m src.main`
 Run public tests: `python -m pytest`
 
 ## File locations
-- Dataset: `data/product_family_planning_dataset.csv` - each row is one planning record for a month, region, and product family.
+- Dataset: `data/product_family_planning_dataset.csv`
 - Report code to edit: `src/report.py`
+- Helper calculations: `src/calc.py`
 - Output file: `outputs/report.json`
-
-The `src` folder contains the source code. `src/main.py` runs the program, `src/data_loader.py` loads the dataset, and `src/calc.py` contains helper calculations.
 
 ## Required Report
 Your `generate_report(df)` function must return a JSON-compatible Python dictionary with exactly these top-level keys:
-- `total_records`
 - `overall`
 - `by_product_family`
 - `meta`
@@ -40,12 +29,6 @@ Include:
 - `forecast_bias_units`
 - `fill_rate_pct`
 
-Use:
-- `forecast_bias_units = total_actual_demand_units - total_forecast_demand_units`
-- `fill_rate_pct = total_units_fulfilled / total_actual_demand_units * 100`
-
-If total actual demand is zero, report `fill_rate_pct` as `0.0`.
-
 ### For `by_product_family`
 Return one object per product family. Each object must include:
 - `product_family`
@@ -56,13 +39,13 @@ Sort `by_product_family` by:
 1. `total_actual_demand_units` descending
 2. `product_family` ascending for ties
 
-### `meta`
+### For `meta`
 Include:
-- `row_count`
-- `product_families`
+- `row_count`: number of rows in the input dataset
+- `product_families`: number of product-family entries in the final grouped report
 
 ## Formatting Rules
 - Sum demand, supply, and fulfilment columns.
 - Average beginning and ending inventory columns.
 - Round decimal metrics to 3 decimals.
-- Use ordinary JSON-compatible Python types only, not pandas or NumPy objects.
+- You may use pandas for calculation, but the final returned dictionary must contain only ordinary JSON-compatible Python types, not pandas or NumPy objects.

@@ -169,7 +169,6 @@ def _expected(df: pd.DataFrame) -> Dict[str, Any]:
     )
 
     return {
-        'total_records': int(len(df)),
         'overall': _metrics(df),
         'by_product_family': by_product_family,
         'meta': {
