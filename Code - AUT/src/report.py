@@ -17,6 +17,7 @@ from . import calc
 logger = logging.getLogger(__name__)
 
 
+# Use this when constructing the final JSON report to round decimal metrics.
 def _r3(value: float) -> float:
     return round(float(value), 3)
 
@@ -31,8 +32,9 @@ def generate_report(df: pd.DataFrame) -> Dict[str, Any]:
     # TODO 2: Compute grouped stats with calc.compute_group_stats(df).
     groups = None
 
-    # TODO 3: Convert grouped rows into by_product_family entries with all
-    # required metrics, including forecast_bias_units and fill_rate_pct.
+    # TODO 3: Convert grouped rows into ordinary by_product_family dictionaries
+    # with all required metrics. Round decimal metrics with _r3 and sort the
+    # final list as specified in TASKS.md.
     by_product_family: List[Dict[str, Any]] = []
 
     # TODO 4: Build meta section and final report.

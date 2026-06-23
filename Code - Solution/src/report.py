@@ -25,6 +25,7 @@ LABEL_MAP = {
 }
 
 
+# Use this when constructing the final JSON report to round decimal metrics.
 def _r3(value: float) -> float:
     return round(float(value), 3)
 
