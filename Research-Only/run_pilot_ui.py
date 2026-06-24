@@ -50,7 +50,7 @@ from summarise_session import summarize_log_dir  # noqa: E402
 
 
 TASK_PHASE_SECONDS = 30 * 60
-REVIEW_PHASE_SECONDS = 10 * 60
+REVIEW_PHASE_SECONDS = 5 * 60
 POLL_INTERVAL_SECONDS = 1.0
 COMMAND_TIMEOUT_SECONDS = 120.0
 

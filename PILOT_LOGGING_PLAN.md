@@ -54,7 +54,7 @@ Supporting modules:
 - `participant_start_clicked`: recorded when the participant starts the UI session.
 - `task_phase_start` and `task_phase_end`: recorded around the 30-minute task phase.
 - `task_done_clicked`: recorded if the participant ends the task phase before the timer elapses.
-- `review_phase_start` and `review_phase_end`: recorded around the fixed 10-minute review phase.
+- `review_phase_start` and `review_phase_end`: recorded around the fixed 5-minute review phase.
 - `ui_close_attempted`: recorded if the participant tries to close the UI during an active task or review phase. The close is blocked.
 - `session_end`: recorded after post-submission checks, before the final summary is written.
 - `submission_done`: recorded automatically when the UI review timer ends, or when the researcher marks the first participant "done" signal in the terminal fallback.
@@ -139,10 +139,10 @@ These should not be treated as available pilot variables unless extra instrument
   canonical-display correctness, group counts, and report hash for every report.
 - Add `dataset_sha256` for provenance.
 - Add a hidden post-submission evaluator that runs public tests and hidden verifier after the participant is done.
-- Use the UI runner to enforce the 30-minute task phase, 10-minute review phase, and automatic hand-in.
+- Use the UI runner to enforce the 30-minute task phase, 5-minute review phase, and automatic hand-in.
 - Add a summary-to-CSV export script for easy analysis across participants.
 - Add an optional custom VS Code chat participant, such as `@study`, only if prompt logging becomes essential. This would log prompts reliably but would change the participant workflow.
 
 ## Short Summary
 
-The current logging environment runs as a hidden researcher observer on the participant machine. The formal UI runner resets the active condition to committed `HEAD`, records session and phase events, captures the starter workspace, watches `outputs/report.json`, computes semantic product-family normalization correctness plus strict display-label diagnostics, enforces a 10-minute review phase, and automatically hands in at review end. After completion, it runs hidden and public checks and writes `events.jsonl` and `session_summary.json` under `Research-Only/logs/<session_id>/`.
+The current logging environment runs as a hidden researcher observer on the participant machine. The formal UI runner resets the active condition to committed `HEAD`, records session and phase events, captures the starter workspace, watches `outputs/report.json`, computes semantic product-family normalization correctness plus strict display-label diagnostics, enforces a 5-minute review phase, and automatically hands in at review end. After completion, it runs hidden and public checks and writes `events.jsonl` and `session_summary.json` under `Research-Only/logs/<session_id>/`.
