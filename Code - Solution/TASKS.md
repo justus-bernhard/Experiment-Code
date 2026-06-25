@@ -3,8 +3,10 @@
 In this task, you will create a product-family planning report for a senior operations stakeholder. Your code is not assessed for style or efficiency. The main deliverable is `outputs/report.json`.
 
 ## Commands
-Produce report: `python -m src.main`
-Run public tests: `python -m pytest`
+Produce report: 
+    python -m src.main
+Run public tests:
+    python -m pytest
 
 ## File locations
 - Dataset: `data/product_family_planning_dataset.csv`
